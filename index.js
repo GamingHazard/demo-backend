@@ -87,7 +87,7 @@ const sendVerificationEmail = async (email, verificationToken) => {
     from: "Uga-Cycle",
     to: email,
     subject: "Email Verification",
-    text: `Please click the following link to verify your email: https://waste-recycle-app-backend.onrender.com/verify/${verificationToken}`,
+    text: `Please click the following link to verify your email: https://demo-backend-85jo.onrender.com/verify/${verificationToken}`,
   };
 
   try {
