@@ -50,9 +50,6 @@ wss.on("connection", (ws) => {
 });
 
 const User = require("./models/user");
-const Post = require("./models/post");
-const salesPost = require("./models/sellPost");
-const buyPost = require("./models/buyPost");
 
 // Endpoint to register a user
 app.post("/register", async (req, res) => {
