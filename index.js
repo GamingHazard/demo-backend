@@ -139,7 +139,7 @@ app.post("/login", async (req, res) => {
 // Endpoint for updating user profile
 app.put("/update", async (req, res) => {
   try {
-    const { userId, username, email, password } = req.body;
+    const { userId, username, email, phone, password } = req.body;
 
     // Find the user by ID and update the fields
     const updatedUser = await User.findByIdAndUpdate(
@@ -147,6 +147,7 @@ app.put("/update", async (req, res) => {
       {
         username: username || undefined,
         email: email || undefined,
+        phone: phone || undefined,
         password: password || undefined,
       },
       { new: true, omitUndefined: true }
@@ -157,8 +158,16 @@ app.put("/update", async (req, res) => {
     }
 
     // Return updated user information (excluding password for security)
-    const { username: updatedUsername, email: updatedEmail } = updatedUser;
-    res.status(200).json({ username: updatedUsername, email: updatedEmail });
+    const {
+      username: updatedUsername,
+      email: updatedEmail,
+      phone: updatedPhone,
+    } = updatedUser;
+    res.status(200).json({
+      username: updatedUsername,
+      email: updatedEmail,
+      phone: updatedPhone,
+    });
   } catch (error) {
     res.status(500).json({ message: "Failed to update profile" });
   }
