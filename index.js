@@ -137,7 +137,7 @@ app.post("/login", async (req, res) => {
 });
 
 // Endpoint for updating user profile
-app.put("/update-profile", async (req, res) => {
+app.put("/update", async (req, res) => {
   try {
     const { userId, username, email, password } = req.body;
 
