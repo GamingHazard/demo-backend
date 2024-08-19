@@ -3,7 +3,6 @@ const bodyParser = require("body-parser");
 const mongoose = require("mongoose");
 const crypto = require("crypto");
 const nodemailer = require("nodemailer");
-const ws = require("ws");
 require("dotenv").config();
 
 const app = express();
@@ -28,25 +27,8 @@ mongoose
   });
 
 // Create the HTTP server
-const server = app.listen(port, () => {
+app.listen(port, () => {
   console.log(`Server is running on port ${port}`);
-});
-
-// Create the WebSocket server
-const wss = new ws.Server({ server });
-
-// WebSocket connection handling
-wss.on("connection", (ws) => {
-  console.log("Client connected");
-
-  ws.on("message", (message) => {
-    console.log("Received:", message);
-    // Handle incoming messages and broadcast them if necessary
-  });
-
-  ws.on("close", () => {
-    console.log("Client disconnected");
-  });
 });
 
 const User = require("./models/user");
@@ -84,7 +66,7 @@ const sendVerificationEmail = async (email, verificationToken) => {
   });
 
   const mailOptions = {
-    from: "Uga-Cycle",
+    from: "auth-app",
     to: email,
     subject: "Email Verification",
     text: `Please click the following link to verify your email: https://demo-backend-85jo.onrender.com/verify/${verificationToken}`,
