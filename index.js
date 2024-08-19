@@ -105,10 +105,12 @@ const generateSecretKey = () => {
 const secretKey = generateSecretKey();
 
 // Endpoint for logging in users
+
 app.post("/login", async (req, res) => {
   try {
     const { email, password } = req.body;
     const user = await User.findOne({ email });
+
     if (!user) {
       return res.status(404).json({ message: "Invalid email" });
     }
@@ -118,8 +120,18 @@ app.post("/login", async (req, res) => {
     }
 
     const token = jwt.sign({ userId: user._id }, secretKey);
-    res.status(200).json({ token });
+
+    // Send back user information along with the token
+    const userInfo = {
+      username: user.username,
+      email: user.email,
+      phone: user.phone,
+      token: token,
+    };
+
+    res.status(200).json(userInfo);
   } catch (error) {
+    console.log("Error during login:", error);
     res.status(500).json({ message: "Login failed" });
   }
 });
