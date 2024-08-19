@@ -136,36 +136,30 @@ app.post("/login", async (req, res) => {
   }
 });
 
-// Endpoint to get all users except the logged-in user
-app.get("/user/:userId", (req, res) => {
+// Endpoint for updating user profile
+app.put("/update-profile", async (req, res) => {
   try {
-    const loggedInUserId = req.params.userId;
-    User.find({ _id: { $ne: loggedInUserId } })
-      .then((users) => {
-        res.status(200).json(users);
-      })
-      .catch((error) => {
-        console.log("Error:", error);
-        res.status(500).json({ message: "Error getting users" });
-      });
-  } catch (error) {
-    res.status(500).json({ message: "Error getting users" });
-  }
-});
+    const { userId, username, email, password } = req.body;
 
-// Endpoint to get user profile
-app.get("/profile/:userId", async (req, res) => {
-  try {
-    const userId = req.params.userId;
+    // Find the user by ID and update the fields
+    const updatedUser = await User.findByIdAndUpdate(
+      userId,
+      {
+        username: username || undefined,
+        email: email || undefined,
+        password: password || undefined,
+      },
+      { new: true, omitUndefined: true }
+    );
 
-    const user = await User.findById(userId);
-
-    if (!user) {
+    if (!updatedUser) {
       return res.status(404).json({ message: "User not found" });
     }
 
-    return res.status(200).json({ user });
+    // Return updated user information (excluding password for security)
+    const { username: updatedUsername, email: updatedEmail } = updatedUser;
+    res.status(200).json({ username: updatedUsername, email: updatedEmail });
   } catch (error) {
-    res.status(500).json({ message: "Error while getting the profile" });
+    res.status(500).json({ message: "Failed to update profile" });
   }
 });
