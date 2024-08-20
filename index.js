@@ -4,6 +4,8 @@ const mongoose = require("mongoose");
 const crypto = require("crypto");
 const nodemailer = require("nodemailer");
 require("dotenv").config();
+const fs = require("fs");
+const path = require("path");
 
 const app = express();
 const port = 3000;
@@ -14,6 +16,18 @@ app.use(bodyParser.urlencoded({ extended: false }));
 app.use(bodyParser.json());
 const jwt = require("jsonwebtoken");
 
+// Check if SECRET_KEY exists in environment variables, if not, generate and save it
+const secretKeyPath = path.join(__dirname, ".secret-key");
+let secretKey;
+
+if (fs.existsSync(secretKeyPath)) {
+  secretKey = fs.readFileSync(secretKeyPath, "utf8");
+} else {
+  secretKey = crypto.randomBytes(32).toString("hex");
+  fs.writeFileSync(secretKeyPath, secretKey, "utf8");
+}
+
+// Connect to MongoDB
 mongoose
   .connect(process.env.DB_URL, {
     useNewUrlParser: true,
@@ -26,29 +40,12 @@ mongoose
     console.error("Error Connecting to MongoDB", err);
   });
 
-// Create the HTTP server
+// HTTP Server
 const server = app.listen(port, () => {
   console.log(`Server is running on port ${port}`);
 });
 
-// Remove WebSocket Server Initialization
-// const ws = require("ws");
-// const wss = new ws.Server({ server });
-
-// WebSocket connection handling
-// wss.on("connection", (ws) => {
-//   console.log("Client connected");
-
-//   ws.on("message", (message) => {
-//     console.log("Received:", message);
-//     // Handle incoming messages and broadcast them if necessary
-//   });
-
-//   ws.on("close", () => {
-//     console.log("Client disconnected");
-//   });
-// });
-
+// WebSocket Server (removed as per previous discussion)
 const User = require("./models/user");
 
 // Endpoint to register a user
@@ -80,7 +77,6 @@ app.post("/register", async (req, res) => {
         username: newUser.username,
         email: newUser.email,
         phone: newUser.phone,
-        // Include other fields as necessary
       },
     });
   } catch (error) {
@@ -89,7 +85,7 @@ app.post("/register", async (req, res) => {
   }
 });
 
-// Verify user email
+// Email Verification Function
 const sendVerificationEmail = async (email, verificationToken) => {
   const transporter = nodemailer.createTransport({
     service: "gmail",
@@ -143,7 +139,7 @@ const authenticateToken = (req, res, next) => {
     return res.status(401).json({ status: "fail", message: "Token required" });
   }
 
-  jwt.verify(token, process.env.SECRET_KEY, (err, user) => {
+  jwt.verify(token, secretKey, (err, user) => {
     if (err) {
       console.log("Token invalid:", err);
       return res.status(403).json({ status: "fail", message: "Invalid token" });
@@ -167,7 +163,7 @@ app.post("/login", async (req, res) => {
       return res.status(404).json({ message: "Invalid password" });
     }
 
-    const token = jwt.sign({ userId: user._id }, process.env.SECRET_KEY, {
+    const token = jwt.sign({ userId: user._id }, secretKey, {
       expiresIn: "1h",
     });
 
@@ -178,7 +174,6 @@ app.post("/login", async (req, res) => {
         name: user.username,
         email: user.email,
         phone: user.phone,
-        // Include other fields as necessary
       },
     });
   } catch (error) {
