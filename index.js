@@ -6,16 +6,14 @@ const nodemailer = require("nodemailer");
 require("dotenv").config();
 const fs = require("fs");
 const path = require("path");
-const WebSocket = require("ws");
 
 const app = express();
-const port = process.env.PORT || 3000; // Make sure to use environment variable or default to 3000
+const port = 3000;
 const cors = require("cors");
-
 app.use(cors());
+
 app.use(bodyParser.urlencoded({ extended: false }));
 app.use(bodyParser.json());
-
 const jwt = require("jsonwebtoken");
 
 // Check if SECRET_KEY exists in environment variables, if not, generate and save it
@@ -47,30 +45,7 @@ const server = app.listen(port, () => {
   console.log(`Server is running on port ${port}`);
 });
 
-// WebSocket Server Setup
-const wss = new WebSocket.Server({ server }); // Pass the HTTP server instance
-
-// WebSocket connection handling
-wss.on("connection", (ws) => {
-  console.log("New WebSocket connection");
-
-  ws.on("message", (message) => {
-    console.log(`Received message => ${message}`);
-
-    // Handle messages from clients here
-    // Example: broadcast message to all clients
-    wss.clients.forEach((client) => {
-      if (client.readyState === WebSocket.OPEN) {
-        client.send(message);
-      }
-    });
-  });
-
-  ws.on("close", () => {
-    console.log("WebSocket connection closed");
-  });
-});
-
+// WebSocket Server (removed as per previous discussion)
 const User = require("./models/user");
 
 // Endpoint to register a user
@@ -124,7 +99,7 @@ const sendVerificationEmail = async (email, verificationToken) => {
     from: "Uga-Cycle",
     to: email,
     subject: "Email Verification",
-    text: `Please click the following link to verify your email: ${process.env.BASE_URL}/verify/${verificationToken}`,
+    text: `Please click the following link to verify your email: https://demo-backend-85jo.onrender.com/verify/${verificationToken}`,
   };
 
   try {
