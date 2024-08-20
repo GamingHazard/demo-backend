@@ -172,7 +172,7 @@ app.post("/login", async (req, res) => {
 });
 
 // Endpoint to get user profile
-app.get("/profile/:userId", async (req, res) => {
+app.get("/profile", async (req, res) => {
   try {
     const userId = req.params.userId;
 
