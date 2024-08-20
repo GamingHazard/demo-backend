@@ -12,7 +12,7 @@ app.use(bodyParser.urlencoded({ extended: false }));
 app.use(bodyParser.json());
 
 // Database configuration
-require("./config/db.js");
+require("./config/db");
 
 // Routes
 const authRoutes = require("./routes/authRoutes");
