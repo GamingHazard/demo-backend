@@ -3,7 +3,6 @@ const bodyParser = require("body-parser");
 const mongoose = require("mongoose");
 const crypto = require("crypto");
 const nodemailer = require("nodemailer");
-const ws = require("ws");
 require("dotenv").config();
 
 const app = express();
@@ -32,22 +31,23 @@ const server = app.listen(port, () => {
   console.log(`Server is running on port ${port}`);
 });
 
-// Create the WebSocket server
-const wss = new ws.Server({ server });
+// Remove WebSocket Server Initialization
+// const ws = require("ws");
+// const wss = new ws.Server({ server });
 
 // WebSocket connection handling
-wss.on("connection", (ws) => {
-  console.log("Client connected");
+// wss.on("connection", (ws) => {
+//   console.log("Client connected");
 
-  ws.on("message", (message) => {
-    console.log("Received:", message);
-    // Handle incoming messages and broadcast them if necessary
-  });
+//   ws.on("message", (message) => {
+//     console.log("Received:", message);
+//     // Handle incoming messages and broadcast them if necessary
+//   });
 
-  ws.on("close", () => {
-    console.log("Client disconnected");
-  });
-});
+//   ws.on("close", () => {
+//     console.log("Client disconnected");
+//   });
+// });
 
 const User = require("./models/user");
 
@@ -137,12 +137,17 @@ app.get("/verify/:token", async (req, res) => {
 const authenticateToken = (req, res, next) => {
   const authHeader = req.headers["authorization"];
   const token = authHeader && authHeader.split(" ")[1];
-  if (token == null)
+
+  if (token == null) {
+    console.log("Token missing");
     return res.status(401).json({ status: "fail", message: "Token required" });
+  }
 
   jwt.verify(token, process.env.SECRET_KEY, (err, user) => {
-    if (err)
+    if (err) {
+      console.log("Token invalid:", err);
       return res.status(403).json({ status: "fail", message: "Invalid token" });
+    }
     req.user = user;
     next();
   });
