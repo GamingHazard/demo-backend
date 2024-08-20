@@ -1,45 +1,244 @@
 const express = require("express");
 const bodyParser = require("body-parser");
 const mongoose = require("mongoose");
-const dotenv = require("dotenv");
-const cors = require("cors");
-const helmet = require("helmet");
-const morgan = require("morgan");
-
-dotenv.config();
+const crypto = require("crypto");
+const nodemailer = require("nodemailer");
+const ws = require("ws");
+require("dotenv").config();
 
 const app = express();
-const port = process.env.PORT || 3000;
+const port = 3000;
+const cors = require("cors");
+app.use(cors());
 
-// Middleware Setup
-app.use(cors()); // Enable CORS for all requests
-app.use(helmet()); // Secure your app by setting various HTTP headers
-app.use(bodyParser.urlencoded({ extended: false })); // Parse application/x-www-form-urlencoded
-app.use(bodyParser.json()); // Parse application/json
-app.use(morgan("tiny")); // Log HTTP requests
+app.use(bodyParser.urlencoded({ extended: false }));
+app.use(bodyParser.json());
+const jwt = require("jsonwebtoken");
 
-// Database Configuration
-require("./config/db"); // Separate file for DB connection logic
+mongoose
+  .connect(process.env.DB_URL, {
+    useNewUrlParser: true,
+    useUnifiedTopology: true,
+  })
+  .then(() => {
+    console.log("Connected to MongoDB");
+  })
+  .catch((err) => {
+    console.error("Error Connecting to MongoDB", err);
+  });
 
-// Route Imports
-const authRoutes = require("./routes/authRoutes");
-
-// Route Setup
-app.use("/auth", authRoutes);
-
-// Error Handling Middleware
-// 404 Route Not Found
-app.use((req, res, next) => {
-  res.status(404).json({ message: "Route not found" });
-});
-
-// General Error Handler
-app.use((err, req, res, next) => {
-  console.error(err.stack); // Log error stack trace
-  res.status(500).json({ message: "Internal Server Error" });
-});
-
-// Start the Server
-app.listen(port, () => {
+// Create the HTTP server
+const server = app.listen(port, () => {
   console.log(`Server is running on port ${port}`);
+});
+
+// Create the WebSocket server
+const wss = new ws.Server({ server });
+
+// WebSocket connection handling
+wss.on("connection", (ws) => {
+  console.log("Client connected");
+
+  ws.on("message", (message) => {
+    console.log("Received:", message);
+    // Handle incoming messages and broadcast them if necessary
+  });
+
+  ws.on("close", () => {
+    console.log("Client disconnected");
+  });
+});
+
+const User = require("./models/user");
+
+// Endpoint to register a user
+app.post("/register", async (req, res) => {
+  try {
+    const { username, email, phone, password } = req.body;
+
+    const existingUser = await User.findOne({ email });
+    if (existingUser) {
+      return res.status(400).json({ message: "Email already registered" });
+    }
+
+    const newUser = new User({
+      username,
+      email,
+      phone,
+      password,
+      verificationToken: crypto.randomBytes(20).toString("hex"),
+    });
+
+    await newUser.save();
+
+    sendVerificationEmail(newUser.email, newUser.verificationToken);
+
+    res.status(200).json({
+      message: "Registration successful",
+      user: {
+        id: newUser._id,
+        username: newUser.username,
+        email: newUser.email,
+        phone: newUser.phone,
+        // Include other fields as necessary
+      },
+    });
+  } catch (error) {
+    console.error("Error registering user", error);
+    res.status(500).json({ message: "Error registering user" });
+  }
+});
+
+// Verify user email
+const sendVerificationEmail = async (email, verificationToken) => {
+  const transporter = nodemailer.createTransport({
+    service: "gmail",
+    auth: {
+      user: process.env.EMAIL_USER,
+      pass: process.env.EMAIL_PASS,
+    },
+  });
+
+  const mailOptions = {
+    from: "Uga-Cycle",
+    to: email,
+    subject: "Email Verification",
+    text: `Please click the following link to verify your email: https://demo-backend-85jo.onrender.com/verify/${verificationToken}`,
+  };
+
+  try {
+    await transporter.sendMail(mailOptions);
+  } catch (error) {
+    console.error("Error sending email", error);
+  }
+};
+
+app.get("/verify/:token", async (req, res) => {
+  try {
+    const token = req.params.token;
+    const user = await User.findOne({ verificationToken: token });
+
+    if (!user) {
+      return res.status(404).json({ message: "Invalid token" });
+    }
+
+    user.verified = true;
+    user.verificationToken = undefined;
+    await user.save();
+
+    res.status(200).json({ message: "Email verified successfully" });
+  } catch (error) {
+    console.error("Error verifying token", error);
+    res.status(500).json({ message: "Email verification failed" });
+  }
+});
+
+const generateSecretKey = () => {
+  return crypto.randomBytes(32).toString("hex");
+};
+
+const secretKey = generateSecretKey();
+
+// Endpoint to login users
+app.post("/login", async (req, res) => {
+  try {
+    const { email, password } = req.body;
+    const user = await User.findOne({ email });
+
+    if (!user) {
+      return res.status(404).json({ message: "Invalid email" });
+    }
+
+    if (user.password !== password) {
+      return res.status(404).json({ message: "Invalid password" });
+    }
+
+    const token = jwt.sign({ userId: user._id }, secretKey);
+
+    res.status(200).json({
+      token,
+      user: {
+        id: user._id,
+        name: user.name,
+        email: user.email,
+        phone: user.phone,
+        // Include other fields as necessary
+      },
+    });
+  } catch (error) {
+    console.error("Error during login", error);
+    res.status(500).json({ message: "Login failed" });
+  }
+});
+
+// Endpoint to get user profile
+app.get("/profile/:userId", async (req, res) => {
+  try {
+    const userId = req.params.userId;
+
+    const user = await User.findById(userId);
+
+    if (!user) {
+      return res.status(404).json({ message: "User not found" });
+    }
+
+    return res.status(200).json({ user });
+  } catch (error) {
+    console.error("Error while getting the profile", error);
+    res.status(500).json({ message: "Error while getting the profile" });
+  }
+});
+
+// PATCH endpoint to update user info
+app.patch("/updateUser", async (req, res) => {
+  try {
+    const { username, email, phone } = req.body;
+
+    // Create a new user object with the updated info
+    const newUser = { username, email, phone };
+
+    // Find the user by ID and update their info
+    const updateUser = await User.findByIdAndUpdate(req.user._id, newUser, {
+      new: true, // Return the updated document
+      runValidators: true, // Validate the update against the schema
+    });
+
+    if (!updateUser) {
+      return res
+        .status(404)
+        .json({ status: "fail", message: "User not found" });
+    }
+
+    // Respond with the updated user information
+    res.status(200).json({ status: "success", results: { updateUser } });
+  } catch (error) {
+    console.log("Error updating user info", error);
+    res
+      .status(500)
+      .json({ status: "error", message: "Failed to update user info" });
+  }
+});
+
+// DELETE endpoint to delete user account
+app.delete("/deleteUser", async (req, res) => {
+  try {
+    // Find the user by ID and delete the account
+    const deleteUser = await User.findByIdAndDelete(req.user._id);
+
+    if (!deleteUser) {
+      return res
+        .status(404)
+        .json({ status: "fail", message: "User not found" });
+    }
+
+    // Respond with a success message
+    res
+      .status(200)
+      .json({ status: "success", message: "Account deleted successfully" });
+  } catch (error) {
+    console.log("Error deleting user account", error);
+    res
+      .status(500)
+      .json({ status: "error", message: "Failed to delete account" });
+  }
 });
