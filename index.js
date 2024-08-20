@@ -133,11 +133,20 @@ app.get("/verify/:token", async (req, res) => {
   }
 });
 
-const generateSecretKey = () => {
-  return crypto.randomBytes(32).toString("hex");
-};
+// Middleware to authenticate and get user from token
+const authenticateToken = (req, res, next) => {
+  const authHeader = req.headers["authorization"];
+  const token = authHeader && authHeader.split(" ")[1];
+  if (token == null)
+    return res.status(401).json({ status: "fail", message: "Token required" });
 
-const secretKey = generateSecretKey();
+  jwt.verify(token, process.env.SECRET_KEY, (err, user) => {
+    if (err)
+      return res.status(403).json({ status: "fail", message: "Invalid token" });
+    req.user = user;
+    next();
+  });
+};
 
 // Endpoint to login users
 app.post("/login", async (req, res) => {
@@ -153,7 +162,9 @@ app.post("/login", async (req, res) => {
       return res.status(404).json({ message: "Invalid password" });
     }
 
-    const token = jwt.sign({ userId: user._id }, secretKey);
+    const token = jwt.sign({ userId: user._id }, process.env.SECRET_KEY, {
+      expiresIn: "1h",
+    });
 
     res.status(200).json({
       token,
@@ -172,7 +183,7 @@ app.post("/login", async (req, res) => {
 });
 
 // Endpoint to get user profile
-app.get("/profile/:userId", async (req, res) => {
+app.get("/profile/:userId", authenticateToken, async (req, res) => {
   try {
     const userId = req.params.userId;
 
@@ -190,34 +201,29 @@ app.get("/profile/:userId", async (req, res) => {
 });
 
 // PATCH endpoint to update user info
-app.patch("/updateUser", async (req, res) => {
+app.patch("/updateUser", authenticateToken, async (req, res) => {
   try {
     const { username, email, phone } = req.body;
+    const userId = req.user.userId; // Use userId from the token
 
-    // Ensure that req.user is available and has an _id property
-    if (!req.user || !req.user._id) {
-      return res.status(401).json({ status: "fail", message: "Unauthorized" });
-    }
+    const updatedUser = await User.findByIdAndUpdate(
+      userId,
+      { username, email, phone },
+      {
+        new: true,
+        runValidators: true,
+      }
+    );
 
-    // Create a new user object with the updated info
-    const newUser = { username, email, phone };
-
-    // Find the user by ID and update their info
-    const updateUser = await User.findByIdAndUpdate(req.user._id, newUser, {
-      new: true, // Return the updated document
-      runValidators: true, // Validate the update against the schema
-    });
-
-    if (!updateUser) {
+    if (!updatedUser) {
       return res
         .status(404)
         .json({ status: "fail", message: "User not found" });
     }
 
-    // Respond with the updated user information
-    res.status(200).json({ status: "success", results: { updateUser } });
+    res.status(200).json({ status: "success", results: { updatedUser } });
   } catch (error) {
-    console.log("Error updating user info", error);
+    console.error("Error updating user info", error);
     res
       .status(500)
       .json({ status: "error", message: "Failed to update user info" });
@@ -225,10 +231,10 @@ app.patch("/updateUser", async (req, res) => {
 });
 
 // DELETE endpoint to delete user account
-app.delete("/deleteUser", async (req, res) => {
+app.delete("/deleteUser", authenticateToken, async (req, res) => {
   try {
-    // Find the user by ID and delete the account
-    const deleteUser = await User.findByIdAndDelete(req.user._id);
+    const userId = req.user.userId; // Use userId from the token
+    const deleteUser = await User.findByIdAndDelete(userId);
 
     if (!deleteUser) {
       return res
@@ -236,7 +242,6 @@ app.delete("/deleteUser", async (req, res) => {
         .json({ status: "fail", message: "User not found" });
     }
 
-    // Respond with a success message
     res
       .status(200)
       .json({ status: "success", message: "Account deleted successfully" });
