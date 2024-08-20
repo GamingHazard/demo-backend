@@ -6,6 +6,7 @@ const nodemailer = require("nodemailer");
 require("dotenv").config();
 const fs = require("fs");
 const path = require("path");
+const WebSocket = require("ws");
 
 const app = express();
 const port = 3000;
@@ -45,7 +46,30 @@ const server = app.listen(port, () => {
   console.log(`Server is running on port ${port}`);
 });
 
-// WebSocket Server (removed as per previous discussion)
+// WebSocket Server Setup
+const wss = new WebSocket.Server({ server });
+
+// WebSocket connection handling
+wss.on("connection", (ws) => {
+  console.log("New WebSocket connection");
+
+  ws.on("message", (message) => {
+    console.log(`Received message => ${message}`);
+
+    // Handle messages from clients here
+    // Example: broadcast message to all clients
+    wss.clients.forEach((client) => {
+      if (client.readyState === WebSocket.OPEN) {
+        client.send(message);
+      }
+    });
+  });
+
+  ws.on("close", () => {
+    console.log("WebSocket connection closed");
+  });
+});
+
 const User = require("./models/user");
 
 // Endpoint to register a user
