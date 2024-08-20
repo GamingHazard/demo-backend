@@ -1,21 +1,21 @@
 const mongoose = require("mongoose");
 
 // MongoDB Connection String from Environment Variables
-const dbUrl = process.env.DB_URL;
-// "mongodb+srv://auth:b466882w@starter.ytwyuog.mongodb.net/demo?retryWrites=true&w=majority&appName=Starter";
+const dbUrl =
+  process.env.DB_URL ||
+  "mongodb+srv://auth:b466882w@starter.ytwyuog.mongodb.net/demo?retryWrites=true&w=majority&appName=Starter";
 
 // Mongoose Connection Options
 const options = {
   useNewUrlParser: true,
   useUnifiedTopology: true,
-  // Removed deprecated options
 };
 
 // Establishing the Connection
 mongoose
   .connect(dbUrl, options)
   .then(() => {
-    console.log(`Connected to MongoDB`);
+    console.log(`Connected to MongoDB at ${dbUrl}`);
   })
   .catch((err) => {
     console.error("Error Connecting to MongoDB:", err);
@@ -36,30 +36,30 @@ mongoose.connection.on("disconnected", () => {
 });
 
 // Graceful Shutdown
-const gracefulShutdown = (msg, callback) => {
-  mongoose.connection.close(() => {
-    console.log(`Mongoose disconnected through ${msg}`);
-    callback();
-  });
+const gracefulShutdown = (msg) => {
+  mongoose.connection
+    .close()
+    .then(() => {
+      console.log(`Mongoose disconnected through ${msg}`);
+      process.exit(0); // Ensure the process exits properly
+    })
+    .catch((err) => {
+      console.error("Error during Mongoose disconnection", err);
+      process.exit(1);
+    });
 };
 
 // For nodemon restarts
 process.once("SIGUSR2", () => {
-  gracefulShutdown("nodemon restart", () => {
-    process.kill(process.pid, "SIGUSR2");
-  });
+  gracefulShutdown("nodemon restart");
 });
 
 // For app termination
 process.on("SIGINT", () => {
-  gracefulShutdown("app termination", () => {
-    process.exit(0);
-  });
+  gracefulShutdown("app termination");
 });
 
 // For Heroku app termination
 process.on("SIGTERM", () => {
-  gracefulShutdown("Heroku app termination", () => {
-    process.exit(0);
-  });
+  gracefulShutdown("Heroku app termination");
 });
