@@ -47,7 +47,7 @@ const server = app.listen(port, () => {
 });
 
 // WebSocket Server Setup
-const wss = new WebSocket.Server({ server });
+const wss = new WebSocket.Server("wss://demo-backend-85jo.onrender.com");
 
 // WebSocket connection handling
 wss.on("connection", (ws) => {
