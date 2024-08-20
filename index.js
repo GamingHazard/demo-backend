@@ -194,6 +194,11 @@ app.patch("/updateUser", async (req, res) => {
   try {
     const { username, email, phone } = req.body;
 
+    // Ensure that req.user is available and has an _id property
+    if (!req.user || !req.user._id) {
+      return res.status(401).json({ status: "fail", message: "Unauthorized" });
+    }
+
     // Create a new user object with the updated info
     const newUser = { username, email, phone };
 
