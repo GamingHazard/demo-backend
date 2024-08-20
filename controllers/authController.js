@@ -78,3 +78,13 @@ exports.login = async (req, res) => {
     res.status(500).json({ message: "Login failed" });
   }
 };
+
+exports.updateMe = async (req, res, next) => {
+  const { username, email } = req.body;
+  const newUser = { username, email };
+  const updateUser = await User.findByIdAndUpdate(req.user._id, newUser, {
+    new: true,
+    runValidators: true,
+  });
+  res.status(200).json({ status: "success", results: { updateUser } });
+};
