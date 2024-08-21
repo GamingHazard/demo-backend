@@ -213,7 +213,7 @@ app.post("/login", async (req, res) => {
       token,
       user: {
         id: user._id,
-        name: user.username,
+        username: user.username,
         email: user.email,
         phone: user.phone,
       },
