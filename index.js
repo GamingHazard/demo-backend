@@ -231,9 +231,9 @@ app.patch("/updateUser", authenticateToken, async (req, res) => {
 });
 
 // DELETE endpoint to delete user account
-app.delete("/deleteUser", authenticateToken, async (req, res) => {
+app.delete("/deleteUser/:userId", authenticateToken, async (req, res) => {
   try {
-    const userId = req.user.userId; // Use userId from the token
+    const userId = req.params.userId; // Get userId from URL
     const deleteUser = await User.findByIdAndDelete(userId);
 
     if (!deleteUser) {
