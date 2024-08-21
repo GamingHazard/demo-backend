@@ -162,17 +162,23 @@ const authenticateToken = (req, res, next) => {
 // Endpoint to login users
 app.post("/login", async (req, res) => {
   try {
-    const { email, password } = req.body;
-    const user = await User.findOne({ email });
+    const { identifier, password } = req.body;
+
+    // Find user by email or phone
+    const user = await User.findOne({
+      $or: [{ email: identifier }, { phone: identifier }],
+    });
 
     if (!user) {
-      return res.status(404).json({ message: "Invalid email" });
+      return res.status(404).json({ message: "User not found" });
     }
 
+    // Check if the password matches
     if (user.password !== password) {
-      return res.status(404).json({ message: "Invalid password" });
+      return res.status(401).json({ message: "Invalid password" });
     }
 
+    // Generate JWT token
     const token = jwt.sign({ userId: user._id }, secretKey, {
       expiresIn: "1h",
     });
@@ -191,7 +197,6 @@ app.post("/login", async (req, res) => {
     res.status(500).json({ message: "Login failed" });
   }
 });
-
 // Endpoint to get user profile
 app.get("/profile/:userId", authenticateToken, async (req, res) => {
   try {
