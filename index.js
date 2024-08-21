@@ -269,3 +269,35 @@ app.delete("/deleteUser/:userId", authenticateToken, async (req, res) => {
       .json({ status: "error", message: "Failed to delete account" });
   }
 });
+
+// Endpoint to request a password reset
+app.post("/forgot-password", async (req, res) => {
+  try {
+    const { email } = req.body;
+    const user = await User.findOne({ email });
+
+    if (!user) {
+      return res
+        .status(404)
+        .json({ message: "No account found with this email address." });
+    }
+
+    // Generate a reset token and expiration
+    const token = crypto.randomBytes(20).toString("hex");
+    user.resetPasswordToken = token;
+    user.resetPasswordExpires = Date.now() + 3600000; // 1 hour
+
+    await user.save();
+
+    // Send email with the token
+    const resetUrl = `https://your-frontend-url/reset-password/${token}`;
+    await sendResetPasswordEmail(user.email, resetUrl);
+
+    res
+      .status(200)
+      .json({ message: "Password reset token has been sent to your email." });
+  } catch (error) {
+    console.error("Error in /forgot-password", error);
+    res.status(500).json({ message: "Server error" });
+  }
+});
