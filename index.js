@@ -242,32 +242,32 @@ app.get("/profile/:userId", authenticateToken, async (req, res) => {
 });
 
 // PATCH endpoint to update user info
-app.patch("/updateUser", authenticateToken, async (req, res) => {
-  try {
-    const { username, email, phone } = req.body;
-    const userId = req.user.userId; // Use userId from the token
+app.patch("/updateUser", async (req, res) => {
+  const { username, email, phone } = req.body;
+  const userId = req.user._id; // Ensure you are extracting the user ID correctly from the request
 
-    const updatedUser = await User.findByIdAndUpdate(
-      userId,
-      { username, email, phone },
-      {
-        new: true,
-        runValidators: true,
-      }
-    );
+  if (!mongoose.Types.ObjectId.isValid(userId)) {
+    return res.status(400).json({ error: "Invalid user ID" });
+  }
+
+  try {
+    const updateFields = {};
+    if (username) updateFields.username = username;
+    if (email) updateFields.email = email;
+    if (phone) updateFields.phone = phone;
+
+    const updatedUser = await User.findByIdAndUpdate(userId, updateFields, {
+      new: true,
+      runValidators: true,
+    });
 
     if (!updatedUser) {
-      return res
-        .status(404)
-        .json({ status: "fail", message: "User not found" });
+      return res.status(404).json({ error: "User not found" });
     }
 
-    res.status(200).json({ status: "success", results: { updatedUser } });
+    res.json(updatedUser);
   } catch (error) {
-    console.error("Error updating user info", error);
-    res
-      .status(500)
-      .json({ status: "error", message: "Failed to update user info" });
+    res.status(500).json({ error: error.message });
   }
 });
 
