@@ -106,7 +106,7 @@ const sendVerificationEmail = async (email, verificationToken) => {
   });
 
   const mailOptions = {
-    from: "Uga-Cycle",
+    from: "democompany150@gmail.com",
     to: email,
     subject: "Email Verification",
     text: `Please click the following link to verify your email: https://demo-backend-85jo.onrender.com/verify/${verificationToken}`,
@@ -130,7 +130,7 @@ const sendResetPasswordEmail = async (email, resetUrl) => {
   });
 
   const mailOptions = {
-    from: "company name",
+    from: "democompany150@gmail.com",
     to: email,
     subject: "Password Reset Request",
     text: `You are receiving this email because you (or someone else) have requested to reset the password for your account.\n\nPlease click on the following link, or paste it into your browser, to complete the process:\n\n${resetUrl}\n\nIf you did not request this, please ignore this email and your password will remain unchanged.`,
