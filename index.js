@@ -62,12 +62,12 @@ app.post("/register", async (req, res) => {
       username,
       email,
       phone,
-      password,
+      password, // Password will be hashed automatically
       verificationToken: crypto.randomBytes(20).toString("hex"),
     });
 
     await newUser.save();
-
+    const token = generateToken(newUser._id);
     sendVerificationEmail(newUser.email, newUser.verificationToken);
 
     res.status(200).json({
@@ -78,6 +78,7 @@ app.post("/register", async (req, res) => {
         email: newUser.email,
         phone: newUser.phone,
       },
+      token,
     });
   } catch (error) {
     console.error("Error registering user", error);
@@ -159,7 +160,8 @@ app.post("/login", async (req, res) => {
       return res.status(404).json({ message: "Invalid email" });
     }
 
-    if (user.password !== password) {
+    const isMatch = await user.comparePassword(password);
+    if (!isMatch) {
       return res.status(404).json({ message: "Invalid password" });
     }
 
@@ -171,7 +173,7 @@ app.post("/login", async (req, res) => {
       token,
       user: {
         id: user._id,
-        name: user.username,
+        username: user.username,
         email: user.email,
         phone: user.phone,
       },
