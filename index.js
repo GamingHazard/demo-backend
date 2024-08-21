@@ -175,7 +175,9 @@ app.post("/login", async (req, res) => {
 
     // Check if the password matches
     if (user.password !== password) {
-      return res.status(401).json({ message: "Invalid password" });
+      return res
+        .status(401)
+        .json({ message: "wrong password,Check your password and try again" });
     }
 
     // Generate JWT token
