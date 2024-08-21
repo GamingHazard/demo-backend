@@ -242,9 +242,10 @@ app.get("/profile/:userId", authenticateToken, async (req, res) => {
 });
 
 // PATCH endpoint to update user info
-app.patch("/updateUser", async (req, res) => {
+// PATCH endpoint to update user info
+app.patch("/updateUser", authenticateToken, async (req, res) => {
   const { username, email, phone } = req.body;
-  const userId = req.user._id; // Ensure you are extracting the user ID correctly from the request
+  const userId = req.user.userId; // Use the userId from the token
 
   if (!mongoose.Types.ObjectId.isValid(userId)) {
     return res.status(400).json({ error: "Invalid user ID" });
