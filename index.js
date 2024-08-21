@@ -298,6 +298,8 @@ app.delete("/deleteUser/:userId", authenticateToken, async (req, res) => {
 app.post("/forgot-password", async (req, res) => {
   try {
     const { identifier } = req.body; // Accept either email or phone number
+
+    // Check if identifier is a valid email or phone number
     const user = await User.findOne({
       $or: [{ email: identifier }, { phoneNumber: identifier }], // Search by email or phone number
     });
