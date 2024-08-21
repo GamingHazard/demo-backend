@@ -53,23 +53,30 @@ app.post("/register", async (req, res) => {
   try {
     const { username, email, phone, password } = req.body;
 
+    // Check if email already exists
     const existingUser = await User.findOne({ email });
     if (existingUser) {
       return res.status(400).json({ message: "Email already registered" });
     }
 
+    // Create a new user
     const newUser = new User({
       username,
       email,
       phone,
-      password, // Password will be hashed automatically
+      password, // Ensure password is hashed before saving
       verificationToken: crypto.randomBytes(20).toString("hex"),
     });
 
     await newUser.save();
+
+    // Generate JWT token
     const token = generateToken(newUser._id);
+
+    // Optionally, send verification email
     sendVerificationEmail(newUser.email, newUser.verificationToken);
 
+    // Send response with user data and token
     res.status(200).json({
       message: "Registration successful",
       user: {
@@ -78,7 +85,7 @@ app.post("/register", async (req, res) => {
         email: newUser.email,
         phone: newUser.phone,
       },
-      token,
+      token, // Include the token in the response
     });
   } catch (error) {
     console.error("Error registering user", error);
@@ -160,8 +167,7 @@ app.post("/login", async (req, res) => {
       return res.status(404).json({ message: "Invalid email" });
     }
 
-    const isMatch = await user.comparePassword(password);
-    if (!isMatch) {
+    if (user.password !== password) {
       return res.status(404).json({ message: "Invalid password" });
     }
 
@@ -173,7 +179,7 @@ app.post("/login", async (req, res) => {
       token,
       user: {
         id: user._id,
-        username: user.username,
+        name: user.username,
         email: user.email,
         phone: user.phone,
       },
