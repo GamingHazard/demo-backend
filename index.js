@@ -79,39 +79,35 @@ const server = app.listen(port, () => {
 const User = require("./models/user");
 
 // Endpoint to register a user with an optional profile picture upload
+// Endpoint to register a user
 app.post("/register", async (req, res) => {
   try {
     const { username, email, phone, password } = req.body;
 
-    // Check if email or phone number already exists
-    const existingUser = await User.findOne({ $or: [{ email }, { phone }] });
+    // Check if email already exists
+    const existingUser = await User.findOne({ email });
     if (existingUser) {
-      return res
-        .status(400)
-        .json({ message: "Email or phone number already registered" });
+      return res.status(400).json({ message: "Email already registered" });
     }
-
-    // Hash password
-    const hashedPassword = await bcrypt.hash(password, 10);
 
     // Create a new user
     const newUser = new User({
       username,
       email,
       phone,
-      password: hashedPassword, // Save hashed password
+      password, // Ensure password is hashed before saving
       verificationToken: crypto.randomBytes(20).toString("hex"),
     });
 
     await newUser.save();
 
     // Generate JWT token
-    const token = jwt.sign({ userId: newUser._id }, process.env.SECRET_KEY, {
+    const token = jwt.sign({ userId: newUser._id }, secretKey, {
       expiresIn: "1h",
     });
 
     // Send verification email
-    await sendVerificationEmail(newUser.email, newUser.verificationToken);
+    sendVerificationEmail(newUser.email, newUser.verificationToken);
 
     // Send response with user data and token
     res.status(200).json({
@@ -122,15 +118,9 @@ app.post("/register", async (req, res) => {
         email: newUser.email,
         phone: newUser.phone,
       },
-      token,
+      token, // Include the token in the response
     });
   } catch (error) {
-    if (error.code === 11000) {
-      const duplicateField = Object.keys(error.keyPattern)[0];
-      return res
-        .status(400)
-        .json({ message: `${duplicateField} is already in use` });
-    }
     console.error("Error registering user", error);
     res.status(500).json({ message: "Error registering user" });
   }
