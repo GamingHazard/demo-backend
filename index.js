@@ -53,18 +53,40 @@ app.post("/register", async (req, res) => {
   try {
     const { username, email, phone, password } = req.body;
 
+    // Validate input
+    if (!username || !email || !phone || !password) {
+      return res.status(400).json({ message: "All fields are required." });
+    }
+
     // Check if email already exists
-    const existingUser = await User.findOne({ email });
-    if (existingUser) {
+    const existingEmail = await User.findOne({ email });
+    if (existingEmail) {
       return res.status(400).json({ message: "Email already registered" });
     }
+
+    // Check if phone already exists
+    const existingPhone = await User.findOne({ phone });
+    if (existingPhone) {
+      return res
+        .status(400)
+        .json({ message: "Phone number already registered" });
+    }
+
+    // Check if username already exists
+    const existingUsername = await User.findOne({ username });
+    if (existingUsername) {
+      return res.status(400).json({ message: "Username already taken" });
+    }
+
+    // Hash password before saving
+    const hashedPassword = await bcrypt.hash(password, 10);
 
     // Create a new user
     const newUser = new User({
       username,
       email,
       phone,
-      password, // Ensure password is hashed before saving
+      password: hashedPassword, // Save hashed password
       verificationToken: crypto.randomBytes(20).toString("hex"),
     });
 
@@ -91,6 +113,17 @@ app.post("/register", async (req, res) => {
     });
   } catch (error) {
     console.error("Error registering user", error);
+
+    // Handle MongoDB duplicate key errors
+    if (error.code === 11000) {
+      const field = Object.keys(error.keyPattern)[0];
+      return res.status(400).json({
+        message: `${
+          field.charAt(0).toUpperCase() + field.slice(1)
+        } already exists`,
+      });
+    }
+
     res.status(500).json({ message: "Error registering user" });
   }
 });
