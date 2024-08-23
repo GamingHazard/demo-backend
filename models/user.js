@@ -7,6 +7,7 @@ const userSchema = new mongoose.Schema({
     required: true,
   },
   email: { type: String, required: true, unique: true },
+  phone: { type: String, required: true, unique: true }, // Added phone field
   password: { type: String, required: true },
   profilePicture: { type: String },
   joindDate: { type: Date, default: Date.now },

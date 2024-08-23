@@ -2,6 +2,7 @@ const express = require("express");
 const bodyParser = require("body-parser");
 const mongoose = require("mongoose");
 const crypto = require("crypto");
+const bcrypt = require("bcrypt"); // Import bcrypt
 const nodemailer = require("nodemailer");
 const ws = require("ws");
 require("dotenv").config();
@@ -54,20 +55,23 @@ const User = require("./models/user");
 // Endpoint to register a user
 app.post("/register", async (req, res) => {
   try {
-    const { name, email, password } = req.body;
+    const { name, email, phone, password } = req.body;
 
     const existingUser = await User.findOne({ email });
     if (existingUser) {
       return res.status(400).json({ message: "Email already registered" });
     }
 
-    const newUser = new User({ name, email, password });
+    // Hash the password before saving the user
+    const hashedPassword = await bcrypt.hash(password, 10);
+
+    const newUser = new User({ name, email, phone, password: hashedPassword });
     newUser.verificationToken = crypto.randomBytes(20).toString("hex");
 
     await newUser.save();
     sendVerificationEmail(newUser.email, newUser.verificationToken);
 
-    res.status(200).json({ message: "Registration successful" });
+    res.status(201).json({ message: "Registration successful" });
   } catch (error) {
     console.log("Error registering user", error);
     res.status(500).json({ message: "Error registering user" });
@@ -78,16 +82,16 @@ const sendVerificationEmail = async (email, verificationToken) => {
   const transporter = nodemailer.createTransport({
     service: "gmail",
     auth: {
-      user: process.env.EMAIL_USER,
-      pass: process.env.EMAIL_PASS,
+      user: "democompany150@gmail.com",
+      pass: "jonathanharkinsb466882w",
     },
   });
 
   const mailOptions = {
-    from: "Uga-Cycle",
+    from: "democompany150@gmail.com",
     to: email,
     subject: "Email Verification",
-    text: `Please click the following link to verify your email: https://waste-recycle-app-backend.onrender.com/verify/${verificationToken}`,
+    text: `Please click the following link to verify your email: https://auth-db-23ly.onrender.com/verify/${verificationToken}`,
   };
 
   try {
@@ -130,7 +134,9 @@ app.post("/login", async (req, res) => {
       return res.status(404).json({ message: "Invalid email" });
     }
 
-    if (user.password !== password) {
+    // Compare the hashed password with the provided password
+    const isPasswordValid = await bcrypt.compare(password, user.password);
+    if (!isPasswordValid) {
       return res.status(404).json({ message: "Invalid password" });
     }
 
