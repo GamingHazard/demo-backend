@@ -94,21 +94,6 @@ app.post("/register", async (req, res) => {
     // Hash password
     const hashedPassword = await bcrypt.hash(password, 10);
 
-    // Upload profile picture to Cloudinary if provided
-    let profileImageUrl = "";
-    if (imagePath) {
-      try {
-        const uploadResponse = await cloudinary.uploader.upload(imagePath, {
-          folder: "user_profiles",
-        });
-        profileImageUrl = uploadResponse.secure_url;
-      } catch (uploadError) {
-        return res
-          .status(500)
-          .json({ message: "Error uploading profile picture" });
-      }
-    }
-
     // Create a new user
     const newUser = new User({
       username,
@@ -116,7 +101,6 @@ app.post("/register", async (req, res) => {
       phone,
       password: hashedPassword, // Save hashed password
       verificationToken: crypto.randomBytes(20).toString("hex"),
-      profileImageUrl,
     });
 
     await newUser.save();
@@ -137,13 +121,11 @@ app.post("/register", async (req, res) => {
         username: newUser.username,
         email: newUser.email,
         phone: newUser.phone,
-        profileImageUrl: newUser.profileImageUrl,
       },
       token,
     });
   } catch (error) {
     if (error.code === 11000) {
-      // Handle duplicate key error (e.g., unique index violation)
       const duplicateField = Object.keys(error.keyPattern)[0];
       return res
         .status(400)
@@ -286,7 +268,7 @@ app.post("/login", async (req, res) => {
 });
 
 // Endpoint to update user profile
-app.patch("/profile", authenticateToken, async (req, res) => {
+app.patch("/profile/:userId", authenticateToken, async (req, res) => {
   try {
     const { username, phone, imagePath } = req.body;
     const userId = req.user.userId;
@@ -376,5 +358,43 @@ app.post("/reset-password/:token", async (req, res) => {
   } catch (error) {
     console.error("Error resetting password", error);
     res.status(500).json({ message: "Error resetting password" });
+  }
+});
+
+app.post("/profileImageUrl/:userId", async (req, res) => {
+  try {
+    const { userId, imagePath } = req.body;
+
+    if (!userId || !imagePath) {
+      return res
+        .status(400)
+        .json({ message: "User ID and image path are required" });
+    }
+
+    // Find the user by ID
+    const user = await User.findById(userId);
+    if (!user) {
+      return res.status(404).json({ message: "User not found" });
+    }
+
+    // Upload profile picture to Cloudinary
+    try {
+      const uploadResponse = await cloudinary.uploader.upload(imagePath, {
+        folder: "user_profiles",
+      });
+
+      // Update the user's profile image URL
+      user.profileImageUrl = uploadResponse.secure_url;
+      await user.save();
+
+      res.status(200).json({ imageUrl: user.profileImageUrl });
+    } catch (uploadError) {
+      return res
+        .status(500)
+        .json({ message: "Error uploading profile picture" });
+    }
+  } catch (error) {
+    console.error("Error uploading image", error);
+    res.status(500).json({ message: "Error uploading image" });
   }
 });
