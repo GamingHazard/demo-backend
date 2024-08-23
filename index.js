@@ -263,46 +263,52 @@ app.get("/profile/:userId", authenticateToken, async (req, res) => {
 });
 
 // PATCH endpoint to update user info
-app.patch("/updateUser", authenticateToken, async (req, res) => {
-  const { username, email, phone, imagePath } = req.body;
-  const userId = req.user.userId; // Use the userId from the token
+app.patch(
+  "/updateUser",
+  authenticateToken,
+  upload.single("image"),
+  async (req, res) => {
+    const userId = req.user.userId;
+    if (!mongoose.Types.ObjectId.isValid(userId)) {
+      return res.status(400).json({ error: "Invalid user ID" });
+    }
 
-  if (!mongoose.Types.ObjectId.isValid(userId)) {
-    return res.status(400).json({ error: "Invalid user ID" });
-  }
+    try {
+      const updateFields = {};
+      if (req.body.username) updateFields.username = req.body.username;
+      if (req.body.email) updateFields.email = req.body.email;
+      if (req.body.phone) updateFields.phone = req.body.phone;
 
-  try {
-    const updateFields = {};
-    if (username) updateFields.username = username;
-    if (email) updateFields.email = email;
-    if (phone) updateFields.phone = phone;
+      if (req.file) {
+        // Upload image to Cloudinary
+        const uploadResponse = await cloudinary.uploader.upload(req.file.path, {
+          folder: "user_profiles",
+        });
+        updateFields.profileImageUrl = uploadResponse.secure_url;
 
-    // Upload new profile picture to Cloudinary if provided
-    if (imagePath) {
-      const uploadResponse = await cloudinary.uploader.upload(imagePath, {
-        folder: "user_profiles",
+        // Clean up the temporary file
+        fs.unlinkSync(req.file.path);
+      }
+
+      const updatedUser = await User.findByIdAndUpdate(userId, updateFields, {
+        new: true,
+        runValidators: true,
       });
-      updateFields.profileImageUrl = uploadResponse.secure_url;
+
+      if (!updatedUser) {
+        return res.status(404).json({ error: "User not found" });
+      }
+
+      res.status(200).json({
+        message: "User updated successfully",
+        user: updatedUser,
+      });
+    } catch (error) {
+      console.error("Error updating user", error);
+      res.status(500).json({ error: "Error updating user" });
     }
-
-    const updatedUser = await User.findByIdAndUpdate(userId, updateFields, {
-      new: true,
-      runValidators: true,
-    });
-
-    if (!updatedUser) {
-      return res.status(404).json({ error: "User not found" });
-    }
-
-    res.status(200).json({
-      message: "User updated successfully",
-      user: updatedUser,
-    });
-  } catch (error) {
-    console.error("Error updating user", error);
-    res.status(500).json({ error: "Error updating user" });
   }
-});
+);
 
 // DELETE endpoint to remove a user
 app.delete("/deleteUser", authenticateToken, async (req, res) => {
@@ -327,16 +333,14 @@ app.delete("/deleteUser", authenticateToken, async (req, res) => {
 });
 
 // Cloudinary image upload endpoint
-const multer = require("multer");
-const upload = multer({ dest: "uploads/" }); // 'uploads/' is a temporary directory
 
 // PATCH endpoint to update user info, including the profile image
 app.patch(
-  "/imageUrl",
+  "/imageUrl/:userId",
   authenticateToken,
   upload.single("image"),
   async (req, res) => {
-    const userId = req.user.userId; // Use the userId from the token
+    const { userId } = req.params;
 
     if (!mongoose.Types.ObjectId.isValid(userId)) {
       return res.status(400).json({ error: "Invalid user ID" });
@@ -345,14 +349,13 @@ app.patch(
     try {
       const updateFields = {};
 
-      // Upload new profile picture to Cloudinary if provided
       if (req.file) {
         const uploadResponse = await cloudinary.uploader.upload(req.file.path, {
           folder: "user_profiles",
         });
         updateFields.profileImageUrl = uploadResponse.secure_url;
 
-        // Delete the file from the server after uploading to Cloudinary
+        // Clean up the temporary file
         fs.unlinkSync(req.file.path);
       }
 
@@ -376,4 +379,25 @@ app.patch(
   }
 );
 
-module.exports = app;
+// Set up multer for file uploads
+const storage = multer.diskStorage({
+  destination: (req, file, cb) => {
+    cb(null, "uploads/"); // Set the destination folder
+  },
+  filename: (req, file, cb) => {
+    cb(null, Date.now() + path.extname(file.originalname)); // Set the file name
+  },
+});
+
+const upload = multer({
+  storage: storage,
+  limits: { fileSize: 5 * 1024 * 1024 }, // Limit file size to 5MB
+  fileFilter: async (req, file, cb) => {
+    const type = await fileType.fromBuffer(file.buffer);
+    if (type && ["image/jpeg", "image/png", "image/gif"].includes(type.mime)) {
+      cb(null, true);
+    } else {
+      cb(new Error("Invalid file type. Only JPEG, PNG, and GIF are allowed."));
+    }
+  },
+});
