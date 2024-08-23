@@ -1,4 +1,3 @@
-// Required modules
 const express = require("express");
 const bodyParser = require("body-parser");
 const mongoose = require("mongoose");
@@ -7,25 +6,15 @@ const nodemailer = require("nodemailer");
 require("dotenv").config();
 const fs = require("fs");
 const path = require("path");
-const cloudinary = require("cloudinary").v2;
-const jwt = require("jsonwebtoken");
-const cors = require("cors");
-const multer = require("multer");
-const bcrypt = require("bcrypt");
 
 const app = express();
 const port = 3000;
-
+const cors = require("cors");
 app.use(cors());
+
 app.use(bodyParser.urlencoded({ extended: false }));
 app.use(bodyParser.json());
-
-// Cloudinary Configuration
-cloudinary.config({
-  cloud_name: process.env.CLOUDINARY_CLOUD_NAME,
-  api_key: process.env.CLOUDINARY_API_KEY,
-  api_secret: process.env.CLOUDINARY_API_SECRET,
-});
+const jwt = require("jsonwebtoken");
 
 // Check if SECRET_KEY exists in environment variables, if not, generate and save it
 const secretKeyPath = path.join(__dirname, ".secret-key");
@@ -38,32 +27,12 @@ if (fs.existsSync(secretKeyPath)) {
   fs.writeFileSync(secretKeyPath, secretKey, "utf8");
 }
 
-// Set up multer for file uploads
-const storage = multer.diskStorage({
-  destination: (req, file, cb) => {
-    cb(null, "uploads/"); // Ensure this directory exists
-  },
-  filename: (req, file, cb) => {
-    cb(null, Date.now() + path.extname(file.originalname)); // Set the file name
-  },
-});
-
-const upload = multer({
-  storage: storage,
-  limits: { fileSize: 5 * 1024 * 1024 }, // Limit file size to 5MB
-  fileFilter: (req, file, cb) => {
-    const mimeType = file.mimetype;
-    if (["image/jpeg", "image/png", "image/gif"].includes(mimeType)) {
-      cb(null, true);
-    } else {
-      cb(new Error("Invalid file type. Only JPEG, PNG, and GIF are allowed."));
-    }
-  },
-});
-
 // Connect to MongoDB
 mongoose
-  .connect(process.env.DB_URL)
+  .connect(process.env.DB_URL, {
+    useNewUrlParser: true,
+    useUnifiedTopology: true,
+  })
   .then(() => {
     console.log("Connected to MongoDB");
   })
@@ -76,9 +45,9 @@ const server = app.listen(port, () => {
   console.log(`Server is running on port ${port}`);
 });
 
+// WebSocket Server (removed as per previous discussion)
 const User = require("./models/user");
 
-// Endpoint to register a user with an optional profile picture upload
 // Endpoint to register a user
 app.post("/register", async (req, res) => {
   try {
@@ -131,13 +100,13 @@ const sendVerificationEmail = async (email, verificationToken) => {
   const transporter = nodemailer.createTransport({
     service: "gmail",
     auth: {
-      user: process.env.EMAIL_USER,
-      pass: process.env.EMAIL_PASS,
+      user: "democompany150@gmail.com",
+      pass: "jonathanharkinsb466882w",
     },
   });
 
   const mailOptions = {
-    from: process.env.EMAIL_USER,
+    from: "democompany150@gmail.com",
     to: email,
     subject: "Email Verification",
     text: `Please click the following link to verify your email: https://demo-backend-85jo.onrender.com/verify/${verificationToken}`,
@@ -155,13 +124,13 @@ const sendResetPasswordEmail = async (email, resetUrl) => {
   const transporter = nodemailer.createTransport({
     service: "gmail",
     auth: {
-      user: process.env.EMAIL_USER,
-      pass: process.env.EMAIL_PASS,
+      user: "democompany150@gmail.com",
+      pass: "jonathanharkinsb466882w",
     },
   });
 
   const mailOptions = {
-    from: process.env.EMAIL_USER,
+    from: "democompany150@gmail.com",
     to: email,
     subject: "Password Reset Request",
     text: `You are receiving this email because you (or someone else) have requested to reset the password for your account.\n\nPlease click on the following link, or paste it into your browser, to complete the process:\n\n${resetUrl}\n\nIf you did not request this, please ignore this email and your password will remain unchanged.`,
@@ -174,7 +143,6 @@ const sendResetPasswordEmail = async (email, resetUrl) => {
   }
 };
 
-// Verify email endpoint
 app.get("/verify/:token", async (req, res) => {
   try {
     const token = req.params.token;
@@ -201,11 +169,13 @@ const authenticateToken = (req, res, next) => {
   const token = authHeader && authHeader.split(" ")[1];
 
   if (token == null) {
+    console.log("Token missing");
     return res.status(401).json({ status: "fail", message: "Token required" });
   }
 
   jwt.verify(token, secretKey, (err, user) => {
     if (err) {
+      console.log("Token invalid:", err);
       return res.status(403).json({ status: "fail", message: "Invalid token" });
     }
     req.user = user;
@@ -228,11 +198,10 @@ app.post("/login", async (req, res) => {
     }
 
     // Check if the password matches
-    const isPasswordValid = await bcrypt.compare(password, user.password);
-    if (!isPasswordValid) {
-      return res.status(401).json({
-        message: "Wrong password, check your password and try again",
-      });
+    if (user.password !== password) {
+      return res
+        .status(401)
+        .json({ message: "wrong password,Check your password and try again" });
     }
 
     // Generate JWT token
@@ -241,150 +210,159 @@ app.post("/login", async (req, res) => {
     });
 
     res.status(200).json({
-      message: "Login successful",
       token,
       user: {
         id: user._id,
         username: user.username,
         email: user.email,
         phone: user.phone,
-        profileImageUrl: user.profileImageUrl,
       },
     });
   } catch (error) {
-    console.error("Error logging in", error);
-    res.status(500).json({ message: "Error logging in" });
+    console.error("Error during login", error);
+    res.status(500).json({ message: "Login failed" });
+  }
+});
+// Endpoint to get user profile
+app.get("/profile/:userId", authenticateToken, async (req, res) => {
+  try {
+    const userId = req.params.userId;
+
+    const user = await User.findById(userId);
+
+    if (!user) {
+      return res.status(404).json({ message: "User not found" });
+    }
+
+    return res.status(200).json({ user });
+  } catch (error) {
+    console.error("Error while getting the profile", error);
+    res.status(500).json({ message: "Error while getting the profile" });
   }
 });
 
-// Endpoint to update user profile
-app.patch("/profile/:userId", authenticateToken, async (req, res) => {
-  try {
-    const { username, phone, imagePath } = req.body;
-    const userId = req.user.userId;
+// PATCH endpoint to update user info
+// PATCH endpoint to update user info
+app.patch("/updateUser", authenticateToken, async (req, res) => {
+  const { username, email, phone } = req.body;
+  const userId = req.user.userId; // Use the userId from the token
 
-    // Check if imagePath is provided and upload to Cloudinary
-    let profileImageUrl;
-    if (imagePath) {
-      const uploadResponse = await cloudinary.uploader.upload(imagePath, {
-        folder: "user_profiles",
-      });
-      profileImageUrl = uploadResponse.secure_url;
+  if (!mongoose.Types.ObjectId.isValid(userId)) {
+    return res.status(400).json({ error: "Invalid user ID" });
+  }
+
+  try {
+    const updateFields = {};
+    if (username) updateFields.username = username;
+    if (email) updateFields.email = email;
+    if (phone) updateFields.phone = phone;
+
+    const updatedUser = await User.findByIdAndUpdate(userId, updateFields, {
+      new: true,
+      runValidators: true,
+    });
+
+    if (!updatedUser) {
+      return res.status(404).json({ error: "User not found" });
     }
 
-    const updatedUser = await User.findByIdAndUpdate(
-      userId,
-      {
-        username,
-        phone,
-        profileImageUrl,
-      },
-      { new: true }
-    );
-
-    res.status(200).json({
-      message: "Profile updated successfully",
-      user: updatedUser,
-    });
+    res.json(updatedUser);
   } catch (error) {
-    console.error("Error updating profile", error);
-    res.status(500).json({ message: "Error updating profile" });
+    res.status(500).json({ error: error.message });
+  }
+});
+
+// DELETE endpoint to delete user account
+app.delete("/deleteUser/:userId", authenticateToken, async (req, res) => {
+  try {
+    const userId = req.params.userId; // Get userId from URL
+    const deleteUser = await User.findByIdAndDelete(userId);
+
+    if (!deleteUser) {
+      return res
+        .status(404)
+        .json({ status: "fail", message: "User not found" });
+    }
+
+    res
+      .status(200)
+      .json({ status: "success", message: "Account deleted successfully" });
+  } catch (error) {
+    console.log("Error deleting user account", error);
+    res
+      .status(500)
+      .json({ status: "error", message: "Failed to delete account" });
+  }
+});
+
+// Endpoint to request a password reset
+app.post("/forgot-password", async (req, res) => {
+  try {
+    const { identifier } = req.body; // Accept either email or phone number
+
+    // Check if identifier is a valid email or phone number
+    const user = await User.findOne({
+      $or: [{ email: identifier }, { phoneNumber: identifier }], // Search by email or phone number
+    });
+
+    if (!user) {
+      return res.status(404).json({
+        message: "No account found with this email address or phone number.",
+      });
+    }
+
+    // Generate a reset token and expiration
+    const token = crypto.randomBytes(20).toString("hex");
+    user.resetPasswordToken = token;
+    user.resetPasswordExpires = Date.now() + 3600000; // 1 hour
+
+    await user.save();
+
+    // Send email with the token if email is provided
+    if (user.email) {
+      const resetUrl = `https://your-frontend-url/reset-password/${token}`;
+      await sendResetPasswordEmail(user.email, resetUrl);
+    }
+
+    // Respond with the token
+    res.status(200).json({ token });
+  } catch (error) {
+    console.error("Error in /forgot-password", error);
+    res.status(500).json({ message: "Server error" });
   }
 });
 
 // Endpoint to reset password
-app.post("/reset-password", async (req, res) => {
-  try {
-    const { email } = req.body;
-
-    // Find user by email
-    const user = await User.findOne({ email });
-    if (!user) {
-      return res.status(404).json({ message: "User not found" });
-    }
-
-    // Generate password reset token and URL
-    const resetToken = crypto.randomBytes(20).toString("hex");
-    const resetUrl = `https://demo-backend-85jo.onrender.com/reset-password/${resetToken}`;
-
-    // Save reset token and expiration time to user document
-    user.resetToken = resetToken;
-    user.resetTokenExpires = Date.now() + 3600000; // 1 hour
-    await user.save();
-
-    // Send reset password email
-    await sendResetPasswordEmail(email, resetUrl);
-
-    res.status(200).json({ message: "Password reset email sent" });
-  } catch (error) {
-    console.error("Error sending reset password email", error);
-    res.status(500).json({ message: "Error sending reset password email" });
-  }
-});
-
-// Endpoint to confirm password reset
-app.post("/reset-password/:token", async (req, res) => {
+app.patch("/reset-password/:token", async (req, res) => {
   try {
     const { token } = req.params;
-    const { newPassword } = req.body;
+    const { password } = req.body;
 
-    // Find user by reset token
+    // Find user with the provided token and check if it is still valid
     const user = await User.findOne({
-      resetToken: token,
-      resetTokenExpires: { $gt: Date.now() },
+      resetPasswordToken: token,
+      resetPasswordExpires: { $gt: Date.now() },
     });
+
     if (!user) {
-      return res.status(400).json({ message: "Invalid or expired token" });
-    }
-
-    // Hash new password and update user document
-    const hashedPassword = await bcrypt.hash(newPassword, 10);
-    user.password = hashedPassword;
-    user.resetToken = undefined;
-    user.resetTokenExpires = undefined;
-    await user.save();
-
-    res.status(200).json({ message: "Password reset successful" });
-  } catch (error) {
-    console.error("Error resetting password", error);
-    res.status(500).json({ message: "Error resetting password" });
-  }
-});
-
-app.post("/profileImageUrl/:userId", async (req, res) => {
-  try {
-    const { userId, imagePath } = req.body;
-
-    if (!userId || !imagePath) {
       return res
         .status(400)
-        .json({ message: "User ID and image path are required" });
+        .json({ message: "Password reset token is invalid or has expired." });
     }
 
-    // Find the user by ID
-    const user = await User.findById(userId);
-    if (!user) {
-      return res.status(404).json({ message: "User not found" });
-    }
+    // Update the user's password and clear the reset token
+    user.password = password; // Note: Storing plaintext passwords is not secure
+    user.resetPasswordToken = undefined;
+    user.resetPasswordExpires = undefined;
 
-    // Upload profile picture to Cloudinary
-    try {
-      const uploadResponse = await cloudinary.uploader.upload(imagePath, {
-        folder: "user_profiles",
-      });
+    // Save the updated user
+    await user.save();
 
-      // Update the user's profile image URL
-      user.profileImageUrl = uploadResponse.secure_url;
-      await user.save();
-
-      res.status(200).json({ imageUrl: user.profileImageUrl });
-    } catch (uploadError) {
-      return res
-        .status(500)
-        .json({ message: "Error uploading profile picture" });
-    }
+    res
+      .status(200)
+      .json({ message: "Password has been updated successfully." });
   } catch (error) {
-    console.error("Error uploading image", error);
-    res.status(500).json({ message: "Error uploading image" });
+    console.error("Error in /reset-password/:token", error);
+    res.status(500).json({ message: "Server error" });
   }
 });
