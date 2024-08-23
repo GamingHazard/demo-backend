@@ -50,18 +50,21 @@ wss.on("connection", (ws) => {
 });
 
 const User = require("./models/user");
+const Post = require("./models/post");
+const salesPost = require("./models/sellPost");
+const buyPost = require("./models/buyPost");
 
 // Endpoint to register a user
 app.post("/register", async (req, res) => {
   try {
-    const { username, email, phone, password } = req.body;
+    const { name, email, password } = req.body;
 
     const existingUser = await User.findOne({ email });
     if (existingUser) {
       return res.status(400).json({ message: "Email already registered" });
     }
 
-    const newUser = new User({ username, email, phone, password });
+    const newUser = new User({ name, email, password });
     newUser.verificationToken = crypto.randomBytes(20).toString("hex");
 
     await newUser.save();
@@ -78,16 +81,16 @@ const sendVerificationEmail = async (email, verificationToken) => {
   const transporter = nodemailer.createTransport({
     service: "gmail",
     auth: {
-      user: "democompany150@gmail.com",
-      pass: "jonathanharkinsb466882w",
+      user: process.env.EMAIL_USER,
+      pass: process.env.EMAIL_PASS,
     },
   });
 
   const mailOptions = {
-    from: "democompany150@gmail.com",
+    from: "Uga-Cycle",
     to: email,
     subject: "Email Verification",
-    text: `Please click the following link to verify your email: https://auth-db-23ly.onrender.com/verify/${verificationToken}`,
+    text: `Please click the following link to verify your email: https://waste-recycle-app-backend.onrender.com/verify/${verificationToken}`,
   };
 
   try {
@@ -138,6 +141,218 @@ app.post("/login", async (req, res) => {
     res.status(200).json({ token });
   } catch (error) {
     res.status(500).json({ message: "Login failed" });
+  }
+});
+
+// Endpoint to get all users except the logged-in user
+app.get("/user/:userId", (req, res) => {
+  try {
+    const loggedInUserId = req.params.userId;
+    User.find({ _id: { $ne: loggedInUserId } })
+      .then((users) => {
+        res.status(200).json(users);
+      })
+      .catch((error) => {
+        console.log("Error:", error);
+        res.status(500).json({ message: "Error getting users" });
+      });
+  } catch (error) {
+    res.status(500).json({ message: "Error getting users" });
+  }
+});
+
+// Endpoint to follow a user
+app.post("/follow", async (req, res) => {
+  const { currentUserId, selectedUserId } = req.body;
+
+  try {
+    await User.findByIdAndUpdate(selectedUserId, {
+      $push: { followers: currentUserId },
+    });
+
+    res.sendStatus(200);
+  } catch (error) {
+    console.log(error);
+    res.status(500).json({ message: "Error following user" });
+  }
+});
+
+// Endpoint to unfollow a user
+app.post("/users/unfollow", async (req, res) => {
+  const { loggedInUserId, targetUserId } = req.body;
+
+  try {
+    await User.findByIdAndUpdate(targetUserId, {
+      $pull: { followers: loggedInUserId },
+    });
+
+    res.status(200).json({ message: "Unfollowed successfully" });
+  } catch (error) {
+    res.status(500).json({ message: "Error unfollowing user" });
+  }
+});
+
+// Endpoint to create a new post
+app.post("/create-post", async (req, res) => {
+  try {
+    const { content, userId } = req.body;
+
+    const newPost = new Post({ user: userId, content });
+    await newPost.save();
+
+    wss.clients.forEach((client) => {
+      if (client.readyState === ws.OPEN) {
+        client.send(JSON.stringify({ type: "NEW_POST", post: newPost }));
+      }
+    });
+
+    res.status(200).json({ message: "Post saved successfully" });
+  } catch (error) {
+    res.status(500).json({ message: "Post creation failed" });
+  }
+});
+
+// Endpoint to create a new sales post
+app.post("/create-SalePosts", async (req, res) => {
+  try {
+    const { content, userId } = req.body;
+
+    const salepost = new salesPost({ user: userId, content });
+    await salepost.save();
+
+    wss.clients.forEach((client) => {
+      if (client.readyState === ws.OPEN) {
+        client.send(JSON.stringify({ type: "NEW_SALES_POST", post: salepost }));
+      }
+    });
+
+    res.status(200).json({ message: "Sales post saved successfully" });
+  } catch (error) {
+    res.status(500).json({ message: "Sales post creation failed" });
+  }
+});
+
+// Endpoint to create a new buy post
+app.post("/create-BuyPosts", async (req, res) => {
+  try {
+    const { content, userId } = req.body;
+
+    const newBuyPost = new buyPost({ user: userId, content });
+    await newBuyPost.save();
+
+    wss.clients.forEach((client) => {
+      if (client.readyState === ws.OPEN) {
+        client.send(JSON.stringify({ type: "NEW_BUY_POST", post: newBuyPost }));
+      }
+    });
+
+    res.status(200).json({ message: "Buy post saved successfully" });
+  } catch (error) {
+    res.status(500).json({ message: "Buy post creation failed" });
+  }
+});
+
+// Endpoint for liking a post
+app.put("/posts/:postId/:userId/like", async (req, res) => {
+  const postId = req.params.postId;
+  const userId = req.params.userId;
+
+  try {
+    const post = await Post.findById(postId).populate("user", "name");
+
+    const updatedPost = await Post.findByIdAndUpdate(
+      postId,
+      { $addToSet: { likes: userId } },
+      { new: true }
+    );
+
+    if (!updatedPost) {
+      return res.status(404).json({ message: "Post not found" });
+    }
+    updatedPost.user = post.user;
+
+    res.json(updatedPost);
+  } catch (error) {
+    console.error("Error liking post:", error);
+    res
+      .status(500)
+      .json({ message: "An error occurred while liking the post" });
+  }
+});
+
+// Endpoint to unlike a post
+app.put("/posts/:postId/:userId/unlike", async (req, res) => {
+  const postId = req.params.postId;
+  const userId = req.params.userId;
+
+  try {
+    const post = await Post.findById(postId).populate("user", "name");
+
+    const updatedPost = await Post.findByIdAndUpdate(
+      postId,
+      { $pull: { likes: userId } },
+      { new: true }
+    );
+
+    updatedPost.user = post.user;
+
+    if (!updatedPost) {
+      return res.status(404).json({ message: "Post not found" });
+    }
+
+    res.json(updatedPost);
+  } catch (error) {
+    console.error("Error unliking post:", error);
+    res
+      .status(500)
+      .json({ message: "An error occurred while unliking the post" });
+  }
+});
+
+// Endpoint to get all posts
+app.get("/get-posts", async (req, res) => {
+  try {
+    const posts = await Post.find()
+      .populate("user", "name")
+      .sort({ createdAt: -1 });
+
+    res.status(200).json(posts);
+  } catch (error) {
+    res
+      .status(500)
+      .json({ message: "An error occurred while getting the posts" });
+  }
+});
+
+// Endpoint to get all Buy posts
+app.get("/get-BuyPosts", async (req, res) => {
+  try {
+    const BuyPosts = await buyPost
+      .find()
+      .populate("user", "name")
+      .sort({ createdAt: -1 });
+
+    res.status(200).json(BuyPosts);
+  } catch (error) {
+    res
+      .status(500)
+      .json({ message: "An error occurred while getting the Buy posts" });
+  }
+});
+
+// Endpoint to get all Sale posts
+app.get("/get-SalePosts", async (req, res) => {
+  try {
+    const SalePosts = await salesPost
+      .find()
+      .populate("user", "name")
+      .sort({ createdAt: -1 });
+
+    res.status(200).json(SalePosts);
+  } catch (error) {
+    res
+      .status(500)
+      .json({ message: "An error occurred while getting the Sale posts" });
   }
 });
 
