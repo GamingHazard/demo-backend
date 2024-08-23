@@ -142,34 +142,41 @@ const secretKey = generateSecretKey();
 //  Endpoint for Users Login
 app.post("/login", async (req, res) => {
   try {
-    const { email, password } = req.body;
-    const user = await User.findOne({ email });
+    const { identifier, password } = req.body;
+
+    // Find user by email or phone
+    const user = await User.findOne({
+      $or: [{ email: identifier }, { phone: identifier }],
+    });
+
     if (!user) {
-      return res.status(404).json({ message: "Invalid email" });
+      return res.status(404).json({ message: "User not found" });
     }
 
-    // Compare the hashed password with the provided password
+    // Check if the password matches
     const isPasswordValid = await bcrypt.compare(password, user.password);
     if (!isPasswordValid) {
-      return res.status(404).json({ message: "Invalid password" });
+      return res.status(401).json({
+        message: "Wrong password, check your password and try again",
+      });
     }
 
-    const token = jwt.sign({ userId: user._id }, secretKey);
+    // Generate JWT token without secret key
+    const token = jwt.sign({ userId: user._id }, undefined, {
+      expiresIn: "2d",
+    });
 
-    // Return all user details including user ID
-    const userDetails = {
-      id: user._id,
-      name: user.name,
-      email: user.email,
-      phone: user.phone,
-      verified: user.verified,
-      token: token, // Include the JWT token in the response
-    };
-
-    res.status(200).json({ message: "Login successful", user: userDetails });
-    console.log("User logged in:", userDetails);
+    res.status(200).json({
+      token,
+      user: {
+        id: user._id,
+        name: user.name,
+        email: user.email,
+        phone: user.phone,
+      },
+    });
   } catch (error) {
-    console.log("Error logging in", error);
+    console.error("Error during login", error);
     res.status(500).json({ message: "Login failed" });
   }
 });
@@ -188,5 +195,130 @@ app.get("/profile/:userId", async (req, res) => {
     return res.status(200).json({ user });
   } catch (error) {
     res.status(500).json({ message: "Error while getting the profile" });
+  }
+});
+
+// DELETE endpoint to delete user account
+app.delete("/deleteUser/:userId", authenticateToken, async (req, res) => {
+  try {
+    const userId = req.params.userId; // Get userId from URL
+    const deleteUser = await User.findByIdAndDelete(userId);
+
+    if (!deleteUser) {
+      return res
+        .status(404)
+        .json({ status: "fail", message: "User not found" });
+    }
+
+    res
+      .status(200)
+      .json({ status: "success", message: "Account deleted successfully" });
+  } catch (error) {
+    console.log("Error deleting user account", error);
+    res
+      .status(500)
+      .json({ status: "error", message: "Failed to delete account" });
+  }
+});
+
+// PATCH endpoint to update user info
+app.patch("/updateUser", authenticateToken, async (req, res) => {
+  const { username, email, phone } = req.body;
+  const userId = req.user.userId; // Use the userId from the token
+
+  if (!mongoose.Types.ObjectId.isValid(userId)) {
+    return res.status(400).json({ error: "Invalid user ID" });
+  }
+
+  try {
+    const updateFields = {};
+    if (username) updateFields.username = username;
+    if (email) updateFields.email = email;
+    if (phone) updateFields.phone = phone;
+
+    const updatedUser = await User.findByIdAndUpdate(userId, updateFields, {
+      new: true,
+      runValidators: true,
+    });
+
+    if (!updatedUser) {
+      return res.status(404).json({ error: "User not found" });
+    }
+
+    res.json(updatedUser);
+  } catch (error) {
+    res.status(500).json({ error: error.message });
+  }
+});
+
+// Endpoint to request a password reset
+app.post("/forgot-password", async (req, res) => {
+  try {
+    const { identifier } = req.body; // Accept either email or phone number
+
+    // Check if identifier is a valid email or phone number
+    const user = await User.findOne({
+      $or: [{ email: identifier }, { phoneNumber: identifier }], // Search by email or phone number
+    });
+
+    if (!user) {
+      return res.status(404).json({
+        message: "No account found with this email address or phone number.",
+      });
+    }
+
+    // Generate a reset token and expiration
+    const token = crypto.randomBytes(20).toString("hex");
+    user.resetPasswordToken = token;
+    user.resetPasswordExpires = Date.now() + 3600000; // 1 hour
+
+    await user.save();
+
+    // Send email with the token if email is provided
+    if (user.email) {
+      const resetUrl = `https://your-frontend-url/reset-password/${token}`;
+      await sendResetPasswordEmail(user.email, resetUrl);
+    }
+
+    // Respond with the token
+    res.status(200).json({ token });
+  } catch (error) {
+    console.error("Error in /forgot-password", error);
+    res.status(500).json({ message: "Server error" });
+  }
+});
+
+// Endpoint to reset password
+app.patch("/reset-password/:token", async (req, res) => {
+  try {
+    const { token } = req.params;
+    const { password } = req.body;
+
+    // Find user with the provided token and check if it is still valid
+    const user = await User.findOne({
+      resetPasswordToken: token,
+      resetPasswordExpires: { $gt: Date.now() },
+    });
+
+    if (!user) {
+      return res
+        .status(400)
+        .json({ message: "Password reset token is invalid or has expired." });
+    }
+
+    // Update the user's password and clear the reset token
+    user.password = password; // Note: Storing plaintext passwords is not secure
+    user.resetPasswordToken = undefined;
+    user.resetPasswordExpires = undefined;
+
+    // Save the updated user
+    await user.save();
+
+    res
+      .status(200)
+      .json({ message: "Password has been updated successfully." });
+  } catch (error) {
+    console.error("Error in /reset-password/:token", error);
+    res.status(500).json({ message: "Server error" });
   }
 });
