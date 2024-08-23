@@ -53,6 +53,7 @@ wss.on("connection", (ws) => {
 const User = require("./models/user");
 
 // Endpoint to register a user
+// Endpoint to register a user
 app.post("/register", async (req, res) => {
   try {
     const { name, email, phone, password } = req.body;
@@ -71,8 +72,19 @@ app.post("/register", async (req, res) => {
     await newUser.save();
     sendVerificationEmail(newUser.email, newUser.verificationToken);
 
-    res.status(201).json({ message: "Registration successful" });
-    console.log(res);
+    // Return all user details including user ID
+    const userDetails = {
+      id: newUser._id,
+      name: newUser.name,
+      email: newUser.email,
+      phone: newUser.phone,
+      verified: newUser.verified,
+    };
+
+    res
+      .status(201)
+      .json({ message: "Registration successful", user: userDetails });
+    console.log("User registered:", userDetails);
   } catch (error) {
     console.log("Error registering user", error);
     res.status(500).json({ message: "Error registering user" });
@@ -127,6 +139,7 @@ const generateSecretKey = () => {
 
 const secretKey = generateSecretKey();
 
+//  Endpoint for Users Login
 app.post("/login", async (req, res) => {
   try {
     const { email, password } = req.body;
@@ -142,9 +155,21 @@ app.post("/login", async (req, res) => {
     }
 
     const token = jwt.sign({ userId: user._id }, secretKey);
-    res.status(200).json({ token });
-    console.log(res);
+
+    // Return all user details including user ID
+    const userDetails = {
+      id: user._id,
+      name: user.name,
+      email: user.email,
+      phone: user.phone,
+      verified: user.verified,
+      token: token, // Include the JWT token in the response
+    };
+
+    res.status(200).json({ message: "Login successful", user: userDetails });
+    console.log("User logged in:", userDetails);
   } catch (error) {
+    console.log("Error logging in", error);
     res.status(500).json({ message: "Login failed" });
   }
 });
