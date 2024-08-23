@@ -72,6 +72,7 @@ app.post("/register", async (req, res) => {
     sendVerificationEmail(newUser.email, newUser.verificationToken);
 
     res.status(201).json({ message: "Registration successful" });
+    console.log(res);
   } catch (error) {
     console.log("Error registering user", error);
     res.status(500).json({ message: "Error registering user" });
