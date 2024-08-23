@@ -10,6 +10,7 @@ const userSchema = new Schema({
   verified: { type: Boolean, default: false },
   resetPasswordToken: String,
   resetPasswordExpires: Date,
+  profileImageUrl: { type: String }, // Add this line to store the image URL
 });
 
 module.exports = mongoose.model("User", userSchema);
