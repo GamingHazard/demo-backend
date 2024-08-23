@@ -143,6 +143,7 @@ app.post("/login", async (req, res) => {
 
     const token = jwt.sign({ userId: user._id }, secretKey);
     res.status(200).json({ token });
+    console.log(res);
   } catch (error) {
     res.status(500).json({ message: "Login failed" });
   }
