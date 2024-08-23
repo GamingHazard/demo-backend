@@ -1,3 +1,4 @@
+// Required modules
 const express = require("express");
 const bodyParser = require("body-parser");
 const mongoose = require("mongoose");
@@ -9,6 +10,8 @@ const path = require("path");
 const cloudinary = require("cloudinary").v2;
 const jwt = require("jsonwebtoken");
 const cors = require("cors");
+const multer = require("multer");
+const fileType = require("file-type");
 
 const app = express();
 const port = 3000;
@@ -34,6 +37,29 @@ if (fs.existsSync(secretKeyPath)) {
   secretKey = crypto.randomBytes(32).toString("hex");
   fs.writeFileSync(secretKeyPath, secretKey, "utf8");
 }
+
+// Set up multer for file uploads
+const storage = multer.diskStorage({
+  destination: (req, file, cb) => {
+    cb(null, "uploads/"); // Set the destination folder
+  },
+  filename: (req, file, cb) => {
+    cb(null, Date.now() + path.extname(file.originalname)); // Set the file name
+  },
+});
+
+const upload = multer({
+  storage: storage,
+  limits: { fileSize: 5 * 1024 * 1024 }, // Limit file size to 5MB
+  fileFilter: async (req, file, cb) => {
+    const type = await fileType.fromBuffer(file.buffer);
+    if (type && ["image/jpeg", "image/png", "image/gif"].includes(type.mime)) {
+      cb(null, true);
+    } else {
+      cb(new Error("Invalid file type. Only JPEG, PNG, and GIF are allowed."));
+    }
+  },
+});
 
 // Connect to MongoDB
 mongoose
@@ -66,6 +92,9 @@ app.post("/register", async (req, res) => {
       return res.status(400).json({ message: "Email already registered" });
     }
 
+    // Hash password
+    const hashedPassword = await bcrypt.hash(password, 10);
+
     // Upload profile picture to Cloudinary if provided
     let profileImageUrl;
     if (imagePath) {
@@ -80,9 +109,9 @@ app.post("/register", async (req, res) => {
       username,
       email,
       phone,
-      password, // Ensure password is hashed before saving
+      password: hashedPassword, // Save hashed password
       verificationToken: crypto.randomBytes(20).toString("hex"),
-      profileImageUrl, // Save the profile picture URL if available
+      profileImageUrl,
     });
 
     await newUser.save();
@@ -103,9 +132,9 @@ app.post("/register", async (req, res) => {
         username: newUser.username,
         email: newUser.email,
         phone: newUser.phone,
-        profileImageUrl: newUser.profileImageUrl, // Include profile picture URL
+        profileImageUrl: newUser.profileImageUrl,
       },
-      token, // Include the token in the response
+      token,
     });
   } catch (error) {
     console.error("Error registering user", error);
@@ -217,7 +246,8 @@ app.post("/login", async (req, res) => {
     }
 
     // Check if the password matches
-    if (user.password !== password) {
+    const isPasswordValid = await bcrypt.compare(password, user.password);
+    if (!isPasswordValid) {
       return res.status(401).json({
         message: "Wrong password, check your password and try again",
       });
@@ -229,175 +259,128 @@ app.post("/login", async (req, res) => {
     });
 
     res.status(200).json({
+      message: "Login successful",
       token,
-      user: {
-        id: user._id,
-        username: user.username,
-        email: user.email,
-        phone: user.phone,
-        profileImageUrl: user.profileImageUrl, // Include profile picture URL
-      },
     });
   } catch (error) {
-    console.error("Error during login", error);
-    res.status(500).json({ message: "Login failed" });
+    console.error("Error logging in", error);
+    res.status(500).json({ message: "Error logging in" });
   }
 });
 
-// Endpoint to get user profile
-app.get("/profile/:userId", authenticateToken, async (req, res) => {
+// Route to update user profile
+app.put(
+  "/update-profile",
+  authenticateToken,
+  upload.single("profileImage"),
+  async (req, res) => {
+    try {
+      const { username, email, phone } = req.body;
+      const userId = req.user.userId;
+
+      // Find user and update fields
+      const user = await User.findById(userId);
+      if (!user) {
+        return res.status(404).json({ message: "User not found" });
+      }
+
+      if (username) user.username = username;
+      if (email) user.email = email;
+      if (phone) user.phone = phone;
+      if (req.file) {
+        // If a new profile picture is uploaded, update the URL
+        const uploadResponse = await cloudinary.uploader.upload(req.file.path, {
+          folder: "user_profiles",
+        });
+        user.profileImageUrl = uploadResponse.secure_url;
+      }
+
+      await user.save();
+
+      res.status(200).json({
+        message: "Profile updated successfully",
+        user,
+      });
+    } catch (error) {
+      console.error("Error updating profile", error);
+      res.status(500).json({ message: "Error updating profile" });
+    }
+  }
+);
+
+// Route to delete user profile
+app.delete("/delete-profile", authenticateToken, async (req, res) => {
   try {
-    const userId = req.params.userId;
+    const userId = req.user.userId;
 
-    const user = await User.findById(userId);
+    // Delete user from database
+    const result = await User.findByIdAndDelete(userId);
+    if (!result) {
+      return res.status(404).json({ message: "User not found" });
+    }
 
+    res.status(200).json({ message: "Profile deleted successfully" });
+  } catch (error) {
+    console.error("Error deleting profile", error);
+    res.status(500).json({ message: "Error deleting profile" });
+  }
+});
+
+// Route to handle forgot password
+app.post("/forgot-password", async (req, res) => {
+  try {
+    const { email } = req.body;
+
+    // Find user by email
+    const user = await User.findOne({ email });
     if (!user) {
       return res.status(404).json({ message: "User not found" });
     }
 
-    return res.status(200).json({ user });
+    // Generate reset token and URL
+    const resetToken = crypto.randomBytes(20).toString("hex");
+    user.resetToken = resetToken;
+    user.resetTokenExpiry = Date.now() + 3600000; // 1 hour
+    await user.save();
+
+    const resetUrl = `https://demo-backend-85jo.onrender.com/reset-password/${resetToken}`;
+
+    // Send reset password email
+    await sendResetPasswordEmail(user.email, resetUrl);
+
+    res.status(200).json({ message: "Reset password email sent" });
   } catch (error) {
-    console.error("Error while getting the profile", error);
-    res.status(500).json({ message: "Error while getting the profile" });
+    console.error("Error handling forgot password", error);
+    res.status(500).json({ message: "Error handling forgot password" });
   }
 });
 
-// PATCH endpoint to update user info
-app.patch(
-  "/updateUser",
-  authenticateToken,
-  upload.single("image"),
-  async (req, res) => {
-    const userId = req.user.userId;
-    if (!mongoose.Types.ObjectId.isValid(userId)) {
-      return res.status(400).json({ error: "Invalid user ID" });
-    }
-
-    try {
-      const updateFields = {};
-      if (req.body.username) updateFields.username = req.body.username;
-      if (req.body.email) updateFields.email = req.body.email;
-      if (req.body.phone) updateFields.phone = req.body.phone;
-
-      if (req.file) {
-        // Upload image to Cloudinary
-        const uploadResponse = await cloudinary.uploader.upload(req.file.path, {
-          folder: "user_profiles",
-        });
-        updateFields.profileImageUrl = uploadResponse.secure_url;
-
-        // Clean up the temporary file
-        fs.unlinkSync(req.file.path);
-      }
-
-      const updatedUser = await User.findByIdAndUpdate(userId, updateFields, {
-        new: true,
-        runValidators: true,
-      });
-
-      if (!updatedUser) {
-        return res.status(404).json({ error: "User not found" });
-      }
-
-      res.status(200).json({
-        message: "User updated successfully",
-        user: updatedUser,
-      });
-    } catch (error) {
-      console.error("Error updating user", error);
-      res.status(500).json({ error: "Error updating user" });
-    }
-  }
-);
-
-// DELETE endpoint to remove a user
-app.delete("/deleteUser", authenticateToken, async (req, res) => {
-  const userId = req.user.userId; // Use the userId from the token
-
-  if (!mongoose.Types.ObjectId.isValid(userId)) {
-    return res.status(400).json({ error: "Invalid user ID" });
-  }
-
+// Route to handle reset password
+app.post("/reset-password/:token", async (req, res) => {
   try {
-    const deletedUser = await User.findByIdAndDelete(userId);
+    const { token } = req.params;
+    const { newPassword } = req.body;
 
-    if (!deletedUser) {
-      return res.status(404).json({ error: "User not found" });
+    // Find user by reset token
+    const user = await User.findOne({
+      resetToken: token,
+      resetTokenExpiry: { $gt: Date.now() },
+    });
+    if (!user) {
+      return res.status(400).json({ message: "Invalid or expired token" });
     }
 
-    res.status(200).json({ message: "User deleted successfully" });
+    // Hash new password
+    const hashedPassword = await bcrypt.hash(newPassword, 10);
+
+    user.password = hashedPassword;
+    user.resetToken = undefined;
+    user.resetTokenExpiry = undefined;
+    await user.save();
+
+    res.status(200).json({ message: "Password reset successfully" });
   } catch (error) {
-    console.error("Error deleting user", error);
-    res.status(500).json({ error: "Error deleting user" });
+    console.error("Error resetting password", error);
+    res.status(500).json({ message: "Error resetting password" });
   }
-});
-
-// Cloudinary image upload endpoint
-
-// PATCH endpoint to update user info, including the profile image
-app.patch(
-  "/imageUrl/:userId",
-  authenticateToken,
-  upload.single("image"),
-  async (req, res) => {
-    const { userId } = req.params;
-
-    if (!mongoose.Types.ObjectId.isValid(userId)) {
-      return res.status(400).json({ error: "Invalid user ID" });
-    }
-
-    try {
-      const updateFields = {};
-
-      if (req.file) {
-        const uploadResponse = await cloudinary.uploader.upload(req.file.path, {
-          folder: "user_profiles",
-        });
-        updateFields.profileImageUrl = uploadResponse.secure_url;
-
-        // Clean up the temporary file
-        fs.unlinkSync(req.file.path);
-      }
-
-      const updatedUser = await User.findByIdAndUpdate(userId, updateFields, {
-        new: true,
-        runValidators: true,
-      });
-
-      if (!updatedUser) {
-        return res.status(404).json({ error: "User not found" });
-      }
-
-      res.status(200).json({
-        message: "User updated successfully",
-        user: updatedUser,
-      });
-    } catch (error) {
-      console.error("Error updating user", error);
-      res.status(500).json({ error: "Error updating user" });
-    }
-  }
-);
-
-// Set up multer for file uploads
-const storage = multer.diskStorage({
-  destination: (req, file, cb) => {
-    cb(null, "uploads/"); // Set the destination folder
-  },
-  filename: (req, file, cb) => {
-    cb(null, Date.now() + path.extname(file.originalname)); // Set the file name
-  },
-});
-
-const upload = multer({
-  storage: storage,
-  limits: { fileSize: 5 * 1024 * 1024 }, // Limit file size to 5MB
-  fileFilter: async (req, file, cb) => {
-    const type = await fileType.fromBuffer(file.buffer);
-    if (type && ["image/jpeg", "image/png", "image/gif"].includes(type.mime)) {
-      cb(null, true);
-    } else {
-      cb(new Error("Invalid file type. Only JPEG, PNG, and GIF are allowed."));
-    }
-  },
 });
