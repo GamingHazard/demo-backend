@@ -54,32 +54,15 @@ app.post("/register", async (req, res) => {
   try {
     const { username, email, phone, password } = req.body;
 
-    // Validate input
-    if (!username || !email || !phone || !password) {
-      return res.status(400).json({ message: "All fields are required." });
-    }
-
-    // Check if email already exists
-    const existingEmail = await User.findOne({ email });
-    if (existingEmail) {
-      return res.status(400).json({ message: "Email already registered" });
-    }
-
-    // Check if phone already exists
-    const existingPhone = await User.findOne({ phone });
-    if (existingPhone) {
+    // Check if email or phone number already exists
+    const existingUser = await User.findOne({ $or: [{ email }, { phone }] });
+    if (existingUser) {
       return res
         .status(400)
-        .json({ message: "Phone number already registered" });
+        .json({ message: "Email or phone number already registered" });
     }
 
-    // Check if username already exists
-    const existingUsername = await User.findOne({ username });
-    if (existingUsername) {
-      return res.status(400).json({ message: "Username already taken" });
-    }
-
-    // Hash password before saving
+    // Hash password
     const hashedPassword = await bcrypt.hash(password, 10);
 
     // Create a new user
@@ -94,12 +77,12 @@ app.post("/register", async (req, res) => {
     await newUser.save();
 
     // Generate JWT token
-    const token = jwt.sign({ userId: newUser._id }, secretKey, {
+    const token = jwt.sign({ userId: newUser._id }, process.env.SECRET_KEY, {
       expiresIn: "1h",
     });
 
     // Send verification email
-    sendVerificationEmail(newUser.email, newUser.verificationToken);
+    await sendVerificationEmail(newUser.email, newUser.verificationToken);
 
     // Send response with user data and token
     res.status(200).json({
@@ -110,21 +93,16 @@ app.post("/register", async (req, res) => {
         email: newUser.email,
         phone: newUser.phone,
       },
-      token, // Include the token in the response
+      token,
     });
   } catch (error) {
-    console.error("Error registering user", error);
-
-    // Handle MongoDB duplicate key errors
     if (error.code === 11000) {
-      const field = Object.keys(error.keyPattern)[0];
-      return res.status(400).json({
-        message: `${
-          field.charAt(0).toUpperCase() + field.slice(1)
-        } already exists`,
-      });
+      const duplicateField = Object.keys(error.keyPattern)[0];
+      return res
+        .status(400)
+        .json({ message: `${duplicateField} is already in use` });
     }
-
+    console.error("Error registering user", error);
     res.status(500).json({ message: "Error registering user" });
   }
 });
