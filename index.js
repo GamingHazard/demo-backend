@@ -231,11 +231,12 @@ app.post("/login", async (req, res) => {
       return res.status(404).json({ message: "User not found" });
     }
 
-    // Check if the password matches
-    if (user.password !== password) {
-      return res
-        .status(401)
-        .json({ message: "wrong password,Check your password and try again" });
+    // Check if the password matches using bcrypt.compare
+    const isMatch = await bcrypt.compare(password, user.password);
+    if (!isMatch) {
+      return res.status(401).json({
+        message: "Wrong password, check your password and try again",
+      });
     }
 
     // Generate JWT token
@@ -257,6 +258,7 @@ app.post("/login", async (req, res) => {
     res.status(500).json({ message: "Login failed" });
   }
 });
+
 // Endpoint to get user profile
 app.get("/profile/:userId", authenticateToken, async (req, res) => {
   try {
