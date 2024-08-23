@@ -11,7 +11,7 @@ const cloudinary = require("cloudinary").v2;
 const jwt = require("jsonwebtoken");
 const cors = require("cors");
 const multer = require("multer");
-const fileType = require("file-type");
+const bcrypt = require("bcrypt");
 
 const app = express();
 const port = 3000;
@@ -41,7 +41,7 @@ if (fs.existsSync(secretKeyPath)) {
 // Set up multer for file uploads
 const storage = multer.diskStorage({
   destination: (req, file, cb) => {
-    cb(null, "uploads/"); // Set the destination folder
+    cb(null, "uploads/"); // Ensure this directory exists
   },
   filename: (req, file, cb) => {
     cb(null, Date.now() + path.extname(file.originalname)); // Set the file name
@@ -51,9 +51,9 @@ const storage = multer.diskStorage({
 const upload = multer({
   storage: storage,
   limits: { fileSize: 5 * 1024 * 1024 }, // Limit file size to 5MB
-  fileFilter: async (req, file, cb) => {
-    const type = await fileType.fromBuffer(file.buffer);
-    if (type && ["image/jpeg", "image/png", "image/gif"].includes(type.mime)) {
+  fileFilter: (req, file, cb) => {
+    const mimeType = file.mimetype;
+    if (["image/jpeg", "image/png", "image/gif"].includes(mimeType)) {
       cb(null, true);
     } else {
       cb(new Error("Invalid file type. Only JPEG, PNG, and GIF are allowed."));
@@ -63,10 +63,7 @@ const upload = multer({
 
 // Connect to MongoDB
 mongoose
-  .connect(process.env.DB_URL, {
-    useNewUrlParser: true,
-    useUnifiedTopology: true,
-  })
+  .connect(process.env.DB_URL)
   .then(() => {
     console.log("Connected to MongoDB");
   })
@@ -217,13 +214,11 @@ const authenticateToken = (req, res, next) => {
   const token = authHeader && authHeader.split(" ")[1];
 
   if (token == null) {
-    console.log("Token missing");
     return res.status(401).json({ status: "fail", message: "Token required" });
   }
 
   jwt.verify(token, secretKey, (err, user) => {
     if (err) {
-      console.log("Token invalid:", err);
       return res.status(403).json({ status: "fail", message: "Invalid token" });
     }
     req.user = user;
@@ -261,6 +256,13 @@ app.post("/login", async (req, res) => {
     res.status(200).json({
       message: "Login successful",
       token,
+      user: {
+        id: user._id,
+        username: user.username,
+        email: user.email,
+        phone: user.phone,
+        profileImageUrl: user.profileImageUrl,
+      },
     });
   } catch (error) {
     console.error("Error logging in", error);
@@ -268,66 +270,43 @@ app.post("/login", async (req, res) => {
   }
 });
 
-// Route to update user profile
-app.put(
-  "/update-profile",
-  authenticateToken,
-  upload.single("profileImage"),
-  async (req, res) => {
-    try {
-      const { username, email, phone } = req.body;
-      const userId = req.user.userId;
-
-      // Find user and update fields
-      const user = await User.findById(userId);
-      if (!user) {
-        return res.status(404).json({ message: "User not found" });
-      }
-
-      if (username) user.username = username;
-      if (email) user.email = email;
-      if (phone) user.phone = phone;
-      if (req.file) {
-        // If a new profile picture is uploaded, update the URL
-        const uploadResponse = await cloudinary.uploader.upload(req.file.path, {
-          folder: "user_profiles",
-        });
-        user.profileImageUrl = uploadResponse.secure_url;
-      }
-
-      await user.save();
-
-      res.status(200).json({
-        message: "Profile updated successfully",
-        user,
-      });
-    } catch (error) {
-      console.error("Error updating profile", error);
-      res.status(500).json({ message: "Error updating profile" });
-    }
-  }
-);
-
-// Route to delete user profile
-app.delete("/delete-profile", authenticateToken, async (req, res) => {
+// Endpoint to update user profile
+app.patch("/profile", authenticateToken, async (req, res) => {
   try {
+    const { username, phone, imagePath } = req.body;
     const userId = req.user.userId;
 
-    // Delete user from database
-    const result = await User.findByIdAndDelete(userId);
-    if (!result) {
-      return res.status(404).json({ message: "User not found" });
+    // Check if imagePath is provided and upload to Cloudinary
+    let profileImageUrl;
+    if (imagePath) {
+      const uploadResponse = await cloudinary.uploader.upload(imagePath, {
+        folder: "user_profiles",
+      });
+      profileImageUrl = uploadResponse.secure_url;
     }
 
-    res.status(200).json({ message: "Profile deleted successfully" });
+    const updatedUser = await User.findByIdAndUpdate(
+      userId,
+      {
+        username,
+        phone,
+        profileImageUrl,
+      },
+      { new: true }
+    );
+
+    res.status(200).json({
+      message: "Profile updated successfully",
+      user: updatedUser,
+    });
   } catch (error) {
-    console.error("Error deleting profile", error);
-    res.status(500).json({ message: "Error deleting profile" });
+    console.error("Error updating profile", error);
+    res.status(500).json({ message: "Error updating profile" });
   }
 });
 
-// Route to handle forgot password
-app.post("/forgot-password", async (req, res) => {
+// Endpoint to reset password
+app.post("/reset-password", async (req, res) => {
   try {
     const { email } = req.body;
 
@@ -337,25 +316,26 @@ app.post("/forgot-password", async (req, res) => {
       return res.status(404).json({ message: "User not found" });
     }
 
-    // Generate reset token and URL
+    // Generate password reset token and URL
     const resetToken = crypto.randomBytes(20).toString("hex");
-    user.resetToken = resetToken;
-    user.resetTokenExpiry = Date.now() + 3600000; // 1 hour
-    await user.save();
-
     const resetUrl = `https://demo-backend-85jo.onrender.com/reset-password/${resetToken}`;
 
-    // Send reset password email
-    await sendResetPasswordEmail(user.email, resetUrl);
+    // Save reset token and expiration time to user document
+    user.resetToken = resetToken;
+    user.resetTokenExpires = Date.now() + 3600000; // 1 hour
+    await user.save();
 
-    res.status(200).json({ message: "Reset password email sent" });
+    // Send reset password email
+    await sendResetPasswordEmail(email, resetUrl);
+
+    res.status(200).json({ message: "Password reset email sent" });
   } catch (error) {
-    console.error("Error handling forgot password", error);
-    res.status(500).json({ message: "Error handling forgot password" });
+    console.error("Error sending reset password email", error);
+    res.status(500).json({ message: "Error sending reset password email" });
   }
 });
 
-// Route to handle reset password
+// Endpoint to confirm password reset
 app.post("/reset-password/:token", async (req, res) => {
   try {
     const { token } = req.params;
@@ -364,21 +344,20 @@ app.post("/reset-password/:token", async (req, res) => {
     // Find user by reset token
     const user = await User.findOne({
       resetToken: token,
-      resetTokenExpiry: { $gt: Date.now() },
+      resetTokenExpires: { $gt: Date.now() },
     });
     if (!user) {
       return res.status(400).json({ message: "Invalid or expired token" });
     }
 
-    // Hash new password
+    // Hash new password and update user document
     const hashedPassword = await bcrypt.hash(newPassword, 10);
-
     user.password = hashedPassword;
     user.resetToken = undefined;
-    user.resetTokenExpiry = undefined;
+    user.resetTokenExpires = undefined;
     await user.save();
 
-    res.status(200).json({ message: "Password reset successfully" });
+    res.status(200).json({ message: "Password reset successful" });
   } catch (error) {
     console.error("Error resetting password", error);
     res.status(500).json({ message: "Error resetting password" });
