@@ -83,22 +83,30 @@ app.post("/register", async (req, res) => {
   try {
     const { username, email, phone, password, imagePath } = req.body;
 
-    // Check if email already exists
-    const existingUser = await User.findOne({ email });
+    // Check if email or phone number already exists
+    const existingUser = await User.findOne({ $or: [{ email }, { phone }] });
     if (existingUser) {
-      return res.status(400).json({ message: "Email already registered" });
+      return res
+        .status(400)
+        .json({ message: "Email or phone number already registered" });
     }
 
     // Hash password
     const hashedPassword = await bcrypt.hash(password, 10);
 
     // Upload profile picture to Cloudinary if provided
-    let profileImageUrl;
+    let profileImageUrl = "";
     if (imagePath) {
-      const uploadResponse = await cloudinary.uploader.upload(imagePath, {
-        folder: "user_profiles",
-      });
-      profileImageUrl = uploadResponse.secure_url;
+      try {
+        const uploadResponse = await cloudinary.uploader.upload(imagePath, {
+          folder: "user_profiles",
+        });
+        profileImageUrl = uploadResponse.secure_url;
+      } catch (uploadError) {
+        return res
+          .status(500)
+          .json({ message: "Error uploading profile picture" });
+      }
     }
 
     // Create a new user
@@ -114,12 +122,12 @@ app.post("/register", async (req, res) => {
     await newUser.save();
 
     // Generate JWT token
-    const token = jwt.sign({ userId: newUser._id }, secretKey, {
+    const token = jwt.sign({ userId: newUser._id }, process.env.SECRET_KEY, {
       expiresIn: "1h",
     });
 
     // Send verification email
-    sendVerificationEmail(newUser.email, newUser.verificationToken);
+    await sendVerificationEmail(newUser.email, newUser.verificationToken);
 
     // Send response with user data and token
     res.status(200).json({
@@ -134,6 +142,13 @@ app.post("/register", async (req, res) => {
       token,
     });
   } catch (error) {
+    if (error.code === 11000) {
+      // Handle duplicate key error (e.g., unique index violation)
+      const duplicateField = Object.keys(error.keyPattern)[0];
+      return res
+        .status(400)
+        .json({ message: `${duplicateField} is already in use` });
+    }
     console.error("Error registering user", error);
     res.status(500).json({ message: "Error registering user" });
   }
