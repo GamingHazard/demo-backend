@@ -1,16 +1,28 @@
 const mongoose = require("mongoose");
-const Schema = mongoose.Schema;
 
-const userSchema = new Schema({
-  username: { type: String, required: true },
+const userSchema = new mongoose.Schema({
+  name: {
+    type: String,
+    unique: true,
+    required: true,
+  },
   email: { type: String, required: true, unique: true },
-  phone: { type: String, required: true, unique: true }, // Change from Number to String
-  password: { type: String, required: true }, // Ensure this is hashed
+  phone: { type: String, required: true, unique: true },
+  password: { type: String, required: true },
+  profilePicture: { type: String },
+  joindDate: { type: Date, default: Date.now },
+  sentFollowRequests: [{ type: mongoose.Schema.Types.ObjectId, ref: "User" }],
+  receivedFollowRequests: [
+    { type: mongoose.Schema.Types.ObjectId, ref: "User" },
+  ],
+  followers: [{ type: mongoose.Schema.Types.ObjectId, ref: "User" }],
+  verified: {
+    type: Boolean,
+    default: false,
+  },
   verificationToken: String,
-  verified: { type: Boolean, default: false },
-  resetPasswordToken: String,
-  resetPasswordExpires: Date,
-  profileImageUrl: { type: String }, // Add this line to store the image URL
 });
 
-module.exports = mongoose.model("User", userSchema);
+const User = mongoose.model("User", userSchema);
+
+module.exports = User;
