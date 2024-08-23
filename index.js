@@ -81,7 +81,7 @@ const User = require("./models/user");
 // Endpoint to register a user with an optional profile picture upload
 app.post("/register", async (req, res) => {
   try {
-    const { username, email, phone, password, imagePath } = req.body;
+    const { username, email, phone, password } = req.body;
 
     // Check if email or phone number already exists
     const existingUser = await User.findOne({ $or: [{ email }, { phone }] });
