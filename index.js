@@ -336,7 +336,6 @@ app.patch(
   authenticateToken,
   upload.single("image"),
   async (req, res) => {
-    const { username, email, phone } = req.body;
     const userId = req.user.userId; // Use the userId from the token
 
     if (!mongoose.Types.ObjectId.isValid(userId)) {
@@ -345,9 +344,6 @@ app.patch(
 
     try {
       const updateFields = {};
-      if (username) updateFields.username = username;
-      if (email) updateFields.email = email;
-      if (phone) updateFields.phone = phone;
 
       // Upload new profile picture to Cloudinary if provided
       if (req.file) {
