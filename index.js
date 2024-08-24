@@ -72,13 +72,19 @@ app.post("/register", async (req, res) => {
     await newUser.save();
     sendVerificationEmail(newUser.email, newUser.verificationToken);
 
-    // Return all user details including user ID
+    // Generate JWT token directly with a secret string
+    const token = jwt.sign({ userId: newUser._id }, "your_secret_key_here", {
+      expiresIn: "1h",
+    });
+
+    // Return all user details including user ID and token
     const userDetails = {
       id: newUser._id,
       name: newUser.name,
       email: newUser.email,
       phone: newUser.phone,
       verified: newUser.verified,
+      token, // Add the token to the response
     };
 
     res
@@ -276,7 +282,7 @@ app.post("/forgot-password", async (req, res) => {
 
     // Send email with the token if email is provided
     if (user.email) {
-      const resetUrl = `https://your-frontend-url/reset-password/${token}`;
+      const resetUrl = `https://auth-db-23ly.onrender.com/reset-password/${token}`;
       await sendResetPasswordEmail(user.email, resetUrl);
     }
 
