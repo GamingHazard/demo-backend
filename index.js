@@ -167,9 +167,9 @@ app.post("/login", async (req, res) => {
       });
     }
 
-    // Generate JWT token without secret key
-    const token = jwt.sign({ userId: user._id }, undefined, {
-      expiresIn: "2d",
+    // Generate JWT token with a secret key
+    const token = jwt.sign({ userId: user._id }, "your_secret_key_here", {
+      expiresIn: "1d",
     });
 
     res.status(200).json({
