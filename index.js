@@ -229,7 +229,7 @@ app.delete("/deleteUser/:userId", async (req, res) => {
 
 // PATCH endpoint to update user info
 app.patch("/updateUser", async (req, res) => {
-  const { username, email, phone } = req.body;
+  const { name, email, phone } = req.body;
   const userId = req.user.userId; // Use the userId from the token
 
   if (!mongoose.Types.ObjectId.isValid(userId)) {
@@ -238,7 +238,7 @@ app.patch("/updateUser", async (req, res) => {
 
   try {
     const updateFields = {};
-    if (username) updateFields.username = username;
+    if (name) updateFields.name = name;
     if (email) updateFields.email = email;
     if (phone) updateFields.phone = phone;
 
