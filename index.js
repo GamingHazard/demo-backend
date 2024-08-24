@@ -228,30 +228,56 @@ app.delete("/deleteUser/:userId", async (req, res) => {
 });
 
 // PATCH endpoint to update user info
-app.patch("/updateUser", async (req, res) => {
+app.patch("/updateUser/:userId", async (req, res) => {
   const { name, email, phone } = req.body;
-  const userId = req.user.userId; // Use the userId from the token
+  const userId = req.params.userId; // Get userId from the URL parameter
 
   if (!mongoose.Types.ObjectId.isValid(userId)) {
     return res.status(400).json({ error: "Invalid user ID" });
   }
 
   try {
+    // Check if email or phone already exists in another user
+    if (email) {
+      const existingEmailUser = await User.findOne({
+        email,
+        _id: { $ne: userId },
+      });
+      if (existingEmailUser) {
+        return res.status(400).json({ error: "Email is already in use" });
+      }
+    }
+
+    if (phone) {
+      const existingPhoneUser = await User.findOne({
+        phone,
+        _id: { $ne: userId },
+      });
+      if (existingPhoneUser) {
+        return res
+          .status(400)
+          .json({ error: "Phone number is already in use" });
+      }
+    }
+
     const updateFields = {};
     if (name) updateFields.name = name;
     if (email) updateFields.email = email;
     if (phone) updateFields.phone = phone;
 
+    // Update the user information
     const updatedUser = await User.findByIdAndUpdate(userId, updateFields, {
       new: true,
-      runValidators: true,
+      runValidators: true, // This ensures the updates respect the schema validations
     });
 
     if (!updatedUser) {
       return res.status(404).json({ error: "User not found" });
     }
 
-    res.json(updatedUser);
+    res
+      .status(200)
+      .json({ message: "User updated successfully", user: updatedUser });
   } catch (error) {
     res.status(500).json({ error: error.message });
   }
