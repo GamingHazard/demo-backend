@@ -6,7 +6,6 @@ const bcrypt = require("bcrypt"); // Import bcrypt
 const nodemailer = require("nodemailer");
 const ws = require("ws");
 require("dotenv").config();
-const jwt = require("jsonwebtoken");
 
 const app = express();
 const port = 3000;
