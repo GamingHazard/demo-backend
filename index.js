@@ -263,14 +263,13 @@ app.delete("/deleteUser/:userId", async (req, res) => {
 // PATCH endpoint to update user info
 app.patch("/updateUser/:userId", async (req, res) => {
   const { name, email, phone } = req.body;
-  const userId = req.params.userId; // Get userId from the URL parameter
+  const userId = req.params.userId;
 
   if (!mongoose.Types.ObjectId.isValid(userId)) {
     return res.status(400).json({ error: "Invalid user ID" });
   }
 
   try {
-    // Check if email or phone already exists in another user
     if (email) {
       const existingEmailUser = await User.findOne({
         email,
@@ -298,10 +297,9 @@ app.patch("/updateUser/:userId", async (req, res) => {
     if (email) updateFields.email = email;
     if (phone) updateFields.phone = phone;
 
-    // Update the user information
     const updatedUser = await User.findByIdAndUpdate(userId, updateFields, {
       new: true,
-      runValidators: true, // This ensures the updates respect the schema validations
+      runValidators: true,
     });
 
     if (!updatedUser) {
