@@ -189,9 +189,26 @@ app.post("/login", async (req, res) => {
 });
 
 // Endpoint to get user profile
-app.get("/profile/:userId", async (req, res) => {
+const authenticateToken = (req, res, next) => {
+  const token = req.header("Authorization")?.split(" ")[1];
+  if (!token) return res.status(401).json({ message: "Access denied" });
+
+  try {
+    const verified = jwt.verify(token, process.env.JWT_SECRET);
+    req.user = verified;
+    next();
+  } catch (error) {
+    res.status(400).json({ message: "Invalid token" });
+  }
+};
+
+app.get("/profile/:userId", authenticateToken, async (req, res) => {
   try {
     const userId = req.params.userId;
+
+    if (req.user.userId !== userId) {
+      return res.status(403).json({ message: "Access denied" });
+    }
 
     const user = await User.findById(userId);
 
