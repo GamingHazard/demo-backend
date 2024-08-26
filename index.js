@@ -6,6 +6,7 @@ const bcrypt = require("bcrypt"); // Import bcrypt
 const nodemailer = require("nodemailer");
 const ws = require("ws");
 require("dotenv").config();
+const { check, validationResult } = require("express-validator");
 
 const app = express();
 const port = 3000;
@@ -53,49 +54,68 @@ wss.on("connection", (ws) => {
 const User = require("./models/user");
 
 // Endpoint to register a user
-// Endpoint to register a user
-app.post("/register", async (req, res) => {
-  try {
-    const { name, email, phone, password } = req.body;
 
-    const existingUser = await User.findOne({ email });
-    if (existingUser) {
-      return res.status(400).json({ message: "Email already registered" });
+// Registration endpoint with validation
+app.post(
+  "/register",
+  [
+    check("email", "Please enter a valid email").isEmail(),
+    check("password", "Password must be at least 6 characters long").isLength({
+      min: 6,
+    }),
+    check("phone", "Phone number must be numeric").isNumeric(),
+  ],
+  async (req, res) => {
+    const errors = validationResult(req);
+    if (!errors.isEmpty()) {
+      return res.status(400).json({ errors: errors.array() });
     }
 
-    // Hash the password before saving the user
-    const hashedPassword = await bcrypt.hash(password, 10);
+    try {
+      const { name, email, phone, password } = req.body;
 
-    const newUser = new User({ name, email, phone, password: hashedPassword });
-    newUser.verificationToken = crypto.randomBytes(20).toString("hex");
+      const existingUser = await User.findOne({ email });
+      if (existingUser) {
+        return res.status(400).json({ message: "Email already registered" });
+      }
 
-    await newUser.save();
-    sendVerificationEmail(newUser.email, newUser.verificationToken);
+      const hashedPassword = await bcrypt.hash(password, 10);
 
-    // Generate JWT token directly with a secret string
-    const token = jwt.sign({ userId: newUser._id }, "your_secret_key_here", {
-      expiresIn: "1h",
-    });
+      const newUser = new User({
+        name,
+        email,
+        phone,
+        password: hashedPassword,
+      });
+      newUser.verificationToken = crypto.randomBytes(20).toString("hex");
 
-    // Return all user details including user ID and token
-    const userDetails = {
-      id: newUser._id,
-      name: newUser.name,
-      email: newUser.email,
-      phone: newUser.phone,
-      verified: newUser.verified,
-      token, // Add the token to the response
-    };
+      await newUser.save();
+      sendVerificationEmail(newUser.email, newUser.verificationToken);
 
-    res
-      .status(201)
-      .json({ message: "Registration successful", user: userDetails });
-    console.log("User registered:", userDetails);
-  } catch (error) {
-    console.log("Error registering user", error);
-    res.status(500).json({ message: "Error registering user" });
+      const token = jwt.sign({ userId: newUser._id }, process.env.JWT_SECRET, {
+        expiresIn: "1h",
+      });
+
+      const userDetails = {
+        id: newUser._id,
+        name: newUser.name,
+        email: newUser.email,
+        phone: newUser.phone,
+        verified: newUser.verified,
+        token,
+      };
+
+      res.status(201).json({
+        message: "Registration successful",
+        user: userDetails,
+      });
+      console.log("User registered:", userDetails);
+    } catch (error) {
+      console.log("Error registering user", error);
+      res.status(500).json({ message: "Error registering user" });
+    }
   }
-});
+);
 
 const sendVerificationEmail = async (email, verificationToken) => {
   const transporter = nodemailer.createTransport({
@@ -205,21 +225,15 @@ const authenticateToken = (req, res, next) => {
 app.get("/profile/:userId", authenticateToken, async (req, res) => {
   try {
     const userId = req.params.userId;
-
-    if (req.user.userId !== userId) {
-      return res.status(403).json({ message: "Access denied" });
-    }
-
     const user = await User.findById(userId);
 
     if (!user) {
       return res.status(404).json({ message: "User not found" });
     }
 
-    return res.status(200).json({ user });
+    return res.status(200).json(user);
   } catch (error) {
-    console.error("Error while getting the profile", error);
-    res.status(500).json({ message: "Error while getting the profile" });
+    res.status(500).json({ message: "Server error" });
   }
 });
 
