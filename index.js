@@ -58,37 +58,6 @@ wss.on("connection", (ws) => {
 
 const User = require("./models/user");
 
-// Endpoint to upload images
-app.patch("/profile-images/:userId", authenticateToken, async (req, res) => {
-  try {
-    const { userId } = req.params;
-    const { imageUrl } = req.body;
-
-    // Validate the user ID
-    if (!mongoose.Types.ObjectId.isValid(userId)) {
-      return res.status(400).json({ error: "Invalid user ID" });
-    }
-
-    // Update the user profile with the new image URL
-    const updatedUser = await User.findByIdAndUpdate(
-      userId,
-      { profilePicture: imageUrl },
-      { new: true, runValidators: true }
-    );
-
-    if (!updatedUser) {
-      return res.status(404).json({ error: "User not found" });
-    }
-
-    res
-      .status(200)
-      .json({ message: "User image updated successfully", user: updatedUser });
-  } catch (error) {
-    console.error("Error updating user image", error);
-    res.status(500).json({ error: "Failed to update user image" });
-  }
-});
-
 // Endpoint to register a user
 app.post("/register", async (req, res) => {
   try {
@@ -402,5 +371,36 @@ app.patch("/reset-password/:token", async (req, res) => {
   } catch (error) {
     console.error("Error in /reset-password/:token", error);
     res.status(500).json({ message: "Server error" });
+  }
+});
+
+// Endpoint to upload images
+app.patch("/profile-images/:userId", authenticateToken, async (req, res) => {
+  try {
+    const { userId } = req.params;
+    const { imageUrl } = req.body;
+
+    // Validate the user ID
+    if (!mongoose.Types.ObjectId.isValid(userId)) {
+      return res.status(400).json({ error: "Invalid user ID" });
+    }
+
+    // Update the user profile with the new image URL
+    const updatedUser = await User.findByIdAndUpdate(
+      userId,
+      { profilePicture: imageUrl },
+      { new: true, runValidators: true }
+    );
+
+    if (!updatedUser) {
+      return res.status(404).json({ error: "User not found" });
+    }
+
+    res
+      .status(200)
+      .json({ message: "User image updated successfully", user: updatedUser });
+  } catch (error) {
+    console.error("Error updating user image", error);
+    res.status(500).json({ error: "Failed to update user image" });
   }
 });
