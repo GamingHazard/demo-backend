@@ -249,8 +249,9 @@ app.delete("/deleteUser/:userId", async (req, res) => {
 });
 
 // PATCH endpoint to update user info
+// PATCH endpoint to update user info
 app.patch("/updateUser/:userId", async (req, res) => {
-  const { name, email, phone } = req.body;
+  const { name, email, phone, profilePicture } = req.body;
   const userId = req.params.userId;
 
   if (!mongoose.Types.ObjectId.isValid(userId)) {
@@ -284,6 +285,7 @@ app.patch("/updateUser/:userId", async (req, res) => {
     if (name) updateFields.name = name;
     if (email) updateFields.email = email;
     if (phone) updateFields.phone = phone;
+    if (profilePicture) updateFields.profilePicture = profilePicture;
 
     const updatedUser = await User.findByIdAndUpdate(userId, updateFields, {
       new: true,
