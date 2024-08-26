@@ -172,10 +172,11 @@ app.post("/login", async (req, res) => {
       expiresIn: "1d",
     });
 
+    // Respond with the token and user information including user ID
     res.status(200).json({
       token,
       user: {
-        id: user._id,
+        id: user._id, // User ID
         name: user.name,
         email: user.email,
         phone: user.phone,
