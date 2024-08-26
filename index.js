@@ -54,7 +54,7 @@ wss.on("connection", (ws) => {
 const User = require("./models/user");
 
 // Endpoint to register a user
-pp.post("/register", async (req, res) => {
+app.post("/register", async (req, res) => {
   try {
     const { name, email, phone, password } = req.body;
 
