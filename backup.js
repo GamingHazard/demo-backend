@@ -2,10 +2,10 @@ const express = require("express");
 const bodyParser = require("body-parser");
 const mongoose = require("mongoose");
 const crypto = require("crypto");
+const bcrypt = require("bcrypt"); // Import bcrypt
 const nodemailer = require("nodemailer");
+const ws = require("ws");
 require("dotenv").config();
-const fs = require("fs");
-const path = require("path");
 
 const app = express();
 const port = 3000;
@@ -16,18 +16,6 @@ app.use(bodyParser.urlencoded({ extended: false }));
 app.use(bodyParser.json());
 const jwt = require("jsonwebtoken");
 
-// Check if SECRET_KEY exists in environment variables, if not, generate and save it
-const secretKeyPath = path.join(__dirname, ".secret-key");
-let secretKey;
-
-if (fs.existsSync(secretKeyPath)) {
-  secretKey = fs.readFileSync(secretKeyPath, "utf8");
-} else {
-  secretKey = crypto.randomBytes(32).toString("hex");
-  fs.writeFileSync(secretKeyPath, secretKey, "utf8");
-}
-
-// Connect to MongoDB
 mongoose
   .connect(process.env.DB_URL, {
     useNewUrlParser: true,
@@ -37,65 +25,78 @@ mongoose
     console.log("Connected to MongoDB");
   })
   .catch((err) => {
-    console.error("Error Connecting to MongoDB", err);
+    console.log("Error Connecting to MongoDB");
   });
 
-// HTTP Server
+// Create the HTTP server
 const server = app.listen(port, () => {
   console.log(`Server is running on port ${port}`);
 });
 
-// WebSocket Server (removed as per previous discussion)
+// Create the WebSocket server
+const wss = new ws.Server({ server });
+
+// WebSocket connection handling
+wss.on("connection", (ws) => {
+  console.log("Client connected");
+
+  ws.on("message", (message) => {
+    console.log("Received:", message);
+    // Handle incoming messages and broadcast them if necessary
+  });
+
+  ws.on("close", () => {
+    console.log("Client disconnected");
+  });
+});
+
 const User = require("./models/user");
 
 // Endpoint to register a user
+
 app.post("/register", async (req, res) => {
   try {
-    const { username, email, phone, password } = req.body;
+    const { name, email, phone, password } = req.body;
 
-    // Check if email already exists
     const existingUser = await User.findOne({ email });
     if (existingUser) {
       return res.status(400).json({ message: "Email already registered" });
     }
 
-    // Create a new user
-    const newUser = new User({
-      username,
-      email,
-      phone,
-      password, // Ensure password is hashed before saving
-      verificationToken: crypto.randomBytes(20).toString("hex"),
-    });
+    // Hash the password before saving the user
+    const hashedPassword = await bcrypt.hash(password, 10);
+
+    const newUser = new User({ name, email, phone, password: hashedPassword });
+    newUser.verificationToken = crypto.randomBytes(20).toString("hex");
 
     await newUser.save();
+    sendVerificationEmail(newUser.email, newUser.verificationToken);
 
     // Generate JWT token
     const token = jwt.sign({ userId: newUser._id }, secretKey, {
       expiresIn: "1h",
     });
 
-    // Send verification email
-    sendVerificationEmail(newUser.email, newUser.verificationToken);
+    // Return all user details including user ID and token
+    const userDetails = {
+      id: newUser._id,
+      name: newUser.name,
+      email: newUser.email,
+      phone: newUser.phone,
+      verified: newUser.verified,
+      token, // Add the token to the response
+    };
 
-    // Send response with user data and token
-    res.status(200).json({
-      message: "Registration successful",
-      user: {
-        id: newUser._id,
-        username: newUser.username,
-        email: newUser.email,
-        phone: newUser.phone,
-      },
-      token, // Include the token in the response
-    });
+    res
+      .status(201)
+      .json({ message: "Registration successful", user: userDetails });
+    console.log("User registered:", userDetails);
   } catch (error) {
-    console.error("Error registering user", error);
+    console.log("Error registering user", error);
     res.status(500).json({ message: "Error registering user" });
   }
 });
 
-// Email Verification Function
 const sendVerificationEmail = async (email, verificationToken) => {
   const transporter = nodemailer.createTransport({
     service: "gmail",
@@ -109,37 +110,13 @@ const sendVerificationEmail = async (email, verificationToken) => {
     from: "democompany150@gmail.com",
     to: email,
     subject: "Email Verification",
-    text: `Please click the following link to verify your email: https://demo-backend-85jo.onrender.com/verify/${verificationToken}`,
+    text: `Please click the following link to verify your email: https://auth-db-23ly.onrender.com/verify/${verificationToken}`,
   };
 
   try {
     await transporter.sendMail(mailOptions);
   } catch (error) {
-    console.error("Error sending email", error);
-  }
-};
-
-// Function to send reset password email
-const sendResetPasswordEmail = async (email, resetUrl) => {
-  const transporter = nodemailer.createTransport({
-    service: "gmail",
-    auth: {
-      user: "democompany150@gmail.com",
-      pass: "jonathanharkinsb466882w",
-    },
-  });
-
-  const mailOptions = {
-    from: "democompany150@gmail.com",
-    to: email,
-    subject: "Password Reset Request",
-    text: `You are receiving this email because you (or someone else) have requested to reset the password for your account.\n\nPlease click on the following link, or paste it into your browser, to complete the process:\n\n${resetUrl}\n\nIf you did not request this, please ignore this email and your password will remain unchanged.`,
-  };
-
-  try {
-    await transporter.sendMail(mailOptions);
-  } catch (error) {
-    console.error("Error sending reset password email", error);
+    console.log("Error sending email", error);
   }
 };
 
@@ -147,7 +124,6 @@ app.get("/verify/:token", async (req, res) => {
   try {
     const token = req.params.token;
     const user = await User.findOne({ verificationToken: token });
-
     if (!user) {
       return res.status(404).json({ message: "Invalid token" });
     }
@@ -158,32 +134,18 @@ app.get("/verify/:token", async (req, res) => {
 
     res.status(200).json({ message: "Email verified successfully" });
   } catch (error) {
-    console.error("Error verifying token", error);
+    console.log("Error verifying token", error);
     res.status(500).json({ message: "Email verification failed" });
   }
 });
 
-// Middleware to authenticate and get user from token
-const authenticateToken = (req, res, next) => {
-  const authHeader = req.headers["authorization"];
-  const token = authHeader && authHeader.split(" ")[1];
-
-  if (token == null) {
-    console.log("Token missing");
-    return res.status(401).json({ status: "fail", message: "Token required" });
-  }
-
-  jwt.verify(token, secretKey, (err, user) => {
-    if (err) {
-      console.log("Token invalid:", err);
-      return res.status(403).json({ status: "fail", message: "Invalid token" });
-    }
-    req.user = user;
-    next();
-  });
+const generateSecretKey = () => {
+  return crypto.randomBytes(32).toString("hex");
 };
 
-// Endpoint to login users
+const secretKey = generateSecretKey();
+
+//  Endpoint for Users Login
 app.post("/login", async (req, res) => {
   try {
     const { identifier, password } = req.body;
@@ -198,22 +160,24 @@ app.post("/login", async (req, res) => {
     }
 
     // Check if the password matches
-    if (user.password !== password) {
-      return res
-        .status(401)
-        .json({ message: "wrong password,Check your password and try again" });
+    const isPasswordValid = await bcrypt.compare(password, user.password);
+    if (!isPasswordValid) {
+      return res.status(401).json({
+        message: "Wrong password, check your password and try again",
+      });
     }
 
-    // Generate JWT token
-    const token = jwt.sign({ userId: user._id }, secretKey, {
-      expiresIn: "1h",
+    // Generate JWT token with a secret key
+    const token = jwt.sign({ userId: user._id }, "your_secret_key_here", {
+      expiresIn: "1d",
     });
 
+    // Respond with the token and user information including user ID
     res.status(200).json({
       token,
       user: {
         id: user._id,
-        username: user.username,
+        name: user.name,
         email: user.email,
         phone: user.phone,
       },
@@ -223,6 +187,21 @@ app.post("/login", async (req, res) => {
     res.status(500).json({ message: "Login failed" });
   }
 });
+
+// Endpoint to get user profile
+const authenticateToken = (req, res, next) => {
+  const token = req.header("Authorization")?.split(" ")[1];
+  if (!token) return res.status(401).json({ message: "Access denied" });
+
+  try {
+    const verified = jwt.verify(token, process.env.JWT_SECRET);
+    req.user = verified;
+    next();
+  } catch (error) {
+    res.status(400).json({ message: "Invalid token" });
+  }
+};
+
 // Endpoint to get user profile
 app.get("/profile/:userId", authenticateToken, async (req, res) => {
   try {
@@ -241,39 +220,8 @@ app.get("/profile/:userId", authenticateToken, async (req, res) => {
   }
 });
 
-// PATCH endpoint to update user info
-// PATCH endpoint to update user info
-app.patch("/updateUser", authenticateToken, async (req, res) => {
-  const { username, email, phone } = req.body;
-  const userId = req.user.userId; // Use the userId from the token
-
-  if (!mongoose.Types.ObjectId.isValid(userId)) {
-    return res.status(400).json({ error: "Invalid user ID" });
-  }
-
-  try {
-    const updateFields = {};
-    if (username) updateFields.username = username;
-    if (email) updateFields.email = email;
-    if (phone) updateFields.phone = phone;
-
-    const updatedUser = await User.findByIdAndUpdate(userId, updateFields, {
-      new: true,
-      runValidators: true,
-    });
-
-    if (!updatedUser) {
-      return res.status(404).json({ error: "User not found" });
-    }
-
-    res.json(updatedUser);
-  } catch (error) {
-    res.status(500).json({ error: error.message });
-  }
-});
-
 // DELETE endpoint to delete user account
-app.delete("/deleteUser/:userId", authenticateToken, async (req, res) => {
+app.delete("/deleteUser/:userId", async (req, res) => {
   try {
     const userId = req.params.userId; // Get userId from URL
     const deleteUser = await User.findByIdAndDelete(userId);
@@ -292,6 +240,60 @@ app.delete("/deleteUser/:userId", authenticateToken, async (req, res) => {
     res
       .status(500)
       .json({ status: "error", message: "Failed to delete account" });
+  }
+});
+
+// PATCH endpoint to update user info
+app.patch("/updateUser/:userId", async (req, res) => {
+  const { name, email, phone } = req.body;
+  const userId = req.params.userId;
+
+  if (!mongoose.Types.ObjectId.isValid(userId)) {
+    return res.status(400).json({ error: "Invalid user ID" });
+  }
+
+  try {
+    if (email) {
+      const existingEmailUser = await User.findOne({
+        email,
+        _id: { $ne: userId },
+      });
+      if (existingEmailUser) {
+        return res.status(400).json({ error: "Email is already in use" });
+      }
+    }
+
+    if (phone) {
+      const existingPhoneUser = await User.findOne({
+        phone,
+        _id: { $ne: userId },
+      });
+      if (existingPhoneUser) {
+        return res
+          .status(400)
+          .json({ error: "Phone number is already in use" });
+      }
+    }
+
+    const updateFields = {};
+    if (name) updateFields.name = name;
+    if (email) updateFields.email = email;
+    if (phone) updateFields.phone = phone;
+
+    const updatedUser = await User.findByIdAndUpdate(userId, updateFields, {
+      new: true,
+      runValidators: true,
+    });
+
+    if (!updatedUser) {
+      return res.status(404).json({ error: "User not found" });
+    }
+
+    res
+      .status(200)
+      .json({ message: "User updated successfully", user: updatedUser });
+  } catch (error) {
+    res.status(500).json({ error: error.message });
   }
 });
 
@@ -320,7 +322,7 @@ app.post("/forgot-password", async (req, res) => {
 
     // Send email with the token if email is provided
     if (user.email) {
-      const resetUrl = `https://your-frontend-url/reset-password/${token}`;
+      const resetUrl = `https://auth-db-23ly.onrender.com/reset-password/${token}`;
       await sendResetPasswordEmail(user.email, resetUrl);
     }
 
