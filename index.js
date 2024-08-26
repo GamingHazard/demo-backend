@@ -6,7 +6,7 @@ const bcrypt = require("bcrypt"); // Import bcrypt
 const nodemailer = require("nodemailer");
 const ws = require("ws");
 require("dotenv").config();
-const { check, validationResult } = require("express-validator");
+const jwt = require("jsonwebtoken");
 
 const app = express();
 const port = 3000;
@@ -54,54 +54,43 @@ wss.on("connection", (ws) => {
 const User = require("./models/user");
 
 // Endpoint to register a user
+
 app.post("/register", async (req, res) => {
   try {
     const { name, email, phone, password } = req.body;
 
-    // Check if user with this email already exists
     const existingUser = await User.findOne({ email });
     if (existingUser) {
       return res.status(400).json({ message: "Email already registered" });
     }
 
-    // Hash the password
+    // Hash the password before saving the user
     const hashedPassword = await bcrypt.hash(password, 10);
 
-    // Create a new user
-    const newUser = new User({
-      name,
-      email,
-      phone,
-      password: hashedPassword,
-    });
+    const newUser = new User({ name, email, phone, password: hashedPassword });
     newUser.verificationToken = crypto.randomBytes(20).toString("hex");
 
-    // Save the user to the database
     await newUser.save();
-
-    // Send verification email
     sendVerificationEmail(newUser.email, newUser.verificationToken);
 
-    // Create a JWT token
-    const token = jwt.sign({ userId: newUser._id }, process.env.JWT_SECRET, {
+    // Generate JWT token
+    const token = jwt.sign({ userId: newUser._id }, secretKey, {
       expiresIn: "1h",
     });
 
-    // Prepare user details
+    // Return all user details including user ID and token
     const userDetails = {
       id: newUser._id,
       name: newUser.name,
       email: newUser.email,
       phone: newUser.phone,
       verified: newUser.verified,
-      token,
+      token, // Add the token to the response
     };
 
-    // Respond with success message and user details
-    res.status(201).json({
-      message: "Registration successful",
-      user: userDetails,
-    });
+    res
+      .status(201)
+      .json({ message: "Registration successful", user: userDetails });
     console.log("User registered:", userDetails);
   } catch (error) {
     console.log("Error registering user", error);
