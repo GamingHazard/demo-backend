@@ -176,7 +176,7 @@ app.post("/login", async (req, res) => {
     res.status(200).json({
       token,
       user: {
-        id: user._id, // User ID
+        id: user._id,
         name: user.name,
         email: user.email,
         phone: user.phone,
@@ -193,14 +193,17 @@ app.get("/profile/:userId", async (req, res) => {
   try {
     const userId = req.params.userId;
 
-    const user = await User.findById(userId);
+    // Find user by ID
+    const user = await User.findById(userId).select("-_id -password");
 
     if (!user) {
       return res.status(404).json({ message: "User not found" });
     }
 
+    // Return user details except for the _id and password
     return res.status(200).json({ user });
   } catch (error) {
+    console.error("Error while getting the profile:", error);
     res.status(500).json({ message: "Error while getting the profile" });
   }
 });
