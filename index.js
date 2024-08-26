@@ -54,68 +54,60 @@ wss.on("connection", (ws) => {
 const User = require("./models/user");
 
 // Endpoint to register a user
+pp.post("/register", async (req, res) => {
+  try {
+    const { name, email, phone, password } = req.body;
 
-// Registration endpoint with validation
-app.post(
-  "/register",
-  [
-    check("email", "Please enter a valid email").isEmail(),
-    check("password", "Password must be at least 6 characters long").isLength({
-      min: 6,
-    }),
-    check("phone", "Phone number must be numeric").isNumeric(),
-  ],
-  async (req, res) => {
-    const errors = validationResult(req);
-    if (!errors.isEmpty()) {
-      return res.status(400).json({ errors: errors.array() });
+    // Check if user with this email already exists
+    const existingUser = await User.findOne({ email });
+    if (existingUser) {
+      return res.status(400).json({ message: "Email already registered" });
     }
 
-    try {
-      const { name, email, phone, password } = req.body;
+    // Hash the password
+    const hashedPassword = await bcrypt.hash(password, 10);
 
-      const existingUser = await User.findOne({ email });
-      if (existingUser) {
-        return res.status(400).json({ message: "Email already registered" });
-      }
+    // Create a new user
+    const newUser = new User({
+      name,
+      email,
+      phone,
+      password: hashedPassword,
+    });
+    newUser.verificationToken = crypto.randomBytes(20).toString("hex");
 
-      const hashedPassword = await bcrypt.hash(password, 10);
+    // Save the user to the database
+    await newUser.save();
 
-      const newUser = new User({
-        name,
-        email,
-        phone,
-        password: hashedPassword,
-      });
-      newUser.verificationToken = crypto.randomBytes(20).toString("hex");
+    // Send verification email
+    sendVerificationEmail(newUser.email, newUser.verificationToken);
 
-      await newUser.save();
-      sendVerificationEmail(newUser.email, newUser.verificationToken);
+    // Create a JWT token
+    const token = jwt.sign({ userId: newUser._id }, process.env.JWT_SECRET, {
+      expiresIn: "1h",
+    });
 
-      const token = jwt.sign({ userId: newUser._id }, process.env.JWT_SECRET, {
-        expiresIn: "1h",
-      });
+    // Prepare user details
+    const userDetails = {
+      id: newUser._id,
+      name: newUser.name,
+      email: newUser.email,
+      phone: newUser.phone,
+      verified: newUser.verified,
+      token,
+    };
 
-      const userDetails = {
-        id: newUser._id,
-        name: newUser.name,
-        email: newUser.email,
-        phone: newUser.phone,
-        verified: newUser.verified,
-        token,
-      };
-
-      res.status(201).json({
-        message: "Registration successful",
-        user: userDetails,
-      });
-      console.log("User registered:", userDetails);
-    } catch (error) {
-      console.log("Error registering user", error);
-      res.status(500).json({ message: "Error registering user" });
-    }
+    // Respond with success message and user details
+    res.status(201).json({
+      message: "Registration successful",
+      user: userDetails,
+    });
+    console.log("User registered:", userDetails);
+  } catch (error) {
+    console.log("Error registering user", error);
+    res.status(500).json({ message: "Error registering user" });
   }
-);
+});
 
 const sendVerificationEmail = async (email, verificationToken) => {
   const transporter = nodemailer.createTransport({
