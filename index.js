@@ -67,14 +67,22 @@ app.post("/register", async (req, res) => {
     // Hash the password
     const hashedPassword = await bcrypt.hash(password, 10);
 
-    // Create and save new user
-    const newUser = new User({ name, email, phone, password: hashedPassword });
+    // Create a new user
+    const newUser = new User({
+      name,
+      email,
+      phone,
+      password: hashedPassword,
+    });
     newUser.verificationToken = crypto.randomBytes(20).toString("hex");
 
+    // Save the user to the database
     await newUser.save();
+
+    // Send verification email
     sendVerificationEmail(newUser.email, newUser.verificationToken);
 
-    // Generate JWT token
+    // Create a JWT token
     const token = jwt.sign({ userId: newUser._id }, process.env.JWT_SECRET, {
       expiresIn: "1h",
     });
@@ -86,7 +94,7 @@ app.post("/register", async (req, res) => {
       email: newUser.email,
       phone: newUser.phone,
       verified: newUser.verified,
-      token, // Include the token in the response
+      token,
     };
 
     // Respond with success message and user details
